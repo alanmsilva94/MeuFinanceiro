@@ -1,0 +1,154 @@
+/* Impressão e "Salvar como PDF" (RF-42). Carregado só para impressão (media="print").
+   Tira menus, botões e janelas; força cores claras (mesmo no tema escuro, para poupar tinta e
+   ficar legível); evita cortar painéis, linhas de tabela e gráficos no meio da página. */
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  /* Tema claro na impressão, mesmo que a tela esteja no escuro. */
+  :root,
+  :root[data-theme="dark"],
+  :root:not([data-theme="light"]) {
+    color-scheme: light;
+    --cor-fundo: #ffffff;
+    --cor-superficie: #ffffff;
+    --cor-superficie-2: #f3f6fc;
+    --cor-superficie-3: #e8eef9;
+    --cor-superficie-4: #dce6f6;
+    --cor-texto: #0b1c30;
+    --cor-texto-2: #434655;
+    --cor-texto-3: #6b6e80;
+    --cor-borda: #cfd6e4;
+    --cor-primaria: #1d4ed8;
+    --cor-primaria-forte: #0037b0;
+    --cor-sobre-primaria: #ffffff;
+    --cor-primaria-suave: #dce1ff;
+    --cor-receita: #166534;
+    --cor-receita-suave: #dcfce7;
+    --cor-despesa: #ba1a1a;
+    --cor-despesa-suave: #ffdad6;
+    --cor-pendente: #92400e;
+    --cor-pendente-suave: #fef3c7;
+    --cor-info: #00647c;
+    --cor-info-suave: #d5f3fb;
+    --sombra: none;
+    --sombra-alta: none;
+    --viz-1: #2a78d6;
+    --viz-2: #eb6834;
+    --viz-sequencial: #2a78d6;
+    --viz-neutra: #b9b8b0;
+    --viz-grade: #d6d5cd;
+    --viz-eixo: #9c9a92;
+    --viz-texto: #52514e;
+    --viz-hover: transparent;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    font-size: 12px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* O que só faz sentido na tela. */
+  .menu,
+  .cabecalho,
+  .botao,
+  .botao-icone,
+  .aba,
+  .avisos,
+  .modal,
+  .vz-dica,
+  .segmentos button[aria-pressed="false"],
+  [data-acao="limpar"],
+  [data-arquivo-backup] {
+    display: none !important;
+  }
+
+  .principal {
+    margin-left: 0 !important;
+  }
+
+  .conteudo {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+
+  .cabecalho-impressao {
+    display: block !important;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+    border-bottom: 2px solid var(--cor-texto);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .painel,
+  .card-painel,
+  .total-item {
+    box-shadow: none !important;
+    border: 1px solid var(--cor-borda);
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .painel {
+    padding: 12px !important;
+  }
+
+  .tabela-rolagem,
+  .tabela-rolagem[style] {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .tabela thead {
+    display: table-header-group;
+  }
+
+  .tabela tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Os cards e gráficos mantêm a grade da tela, em uma largura que cabe na folha. */
+  .cards-painel {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .grade-graficos {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  svg.vz {
+    break-inside: avoid;
+  }
+
+  /* A visão em tabela de cada gráfico sai impressa (o main.js a abre antes de imprimir):
+     os gráficos de colunas e de linha só mostram os valores ao passar o mouse. */
+  .vz-tabela summary {
+    display: none;
+  }
+
+  .vz-tabela {
+    margin-top: 8px;
+    font-size: 11px;
+  }
+
+  /* Selects viram texto simples, sem a seta. */
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 0 !important;
+    background: transparent !important;
+    padding-left: 0 !important;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

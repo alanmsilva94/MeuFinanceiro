@@ -1,0 +1,21 @@
+/* Tela Entradas: receitas com formulário, filtros, totais e tabela (RF-08 a RF-12). */
+App.telas.criarMovimentos({
+  nome: 'entradas',
+  tipo: 'receita',
+  titulo: 'Entradas',
+  icone: 'trending_up',
+  ordem: 2,
+  plural: 'entradas',
+  tituloNovo: 'Nova entrada',
+  tituloEdicao: 'Editar entrada',
+  descricaoFormulario: 'Registre o que você recebe ou vai receber. Entradas pendentes só entram no saldo depois de marcadas como recebidas.',
+  rotuloBotaoNovo: 'Registrar entrada',
+  rotuloVencimento: 'Previsão de recebimento',
+  rotuloEfetivada: 'Recebido',
+  rotuloDataEfetiva: 'Data de recebimento',
+  rotuloMarcar: 'Marcar como recebido',
+  rotuloTotalRealizado: 'Recebido',
+  rotuloTotalPendente: 'A receber (pendente)',
+  mensagemCriado: 'Entrada registrada.',
+  mensagemEfetivado: 'Entrada marcada como recebida.',
+});

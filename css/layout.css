@@ -1,0 +1,282 @@
+/* Menu lateral fixo, cabeçalho e área de conteúdo. */
+
+.menu {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: var(--menu-largura);
+  background: color-mix(in srgb, var(--cor-superficie) 92%, transparent);
+  backdrop-filter: blur(18px) saturate(1.4);
+  border-right: 1px solid var(--cor-borda);
+  display: flex;
+  flex-direction: column;
+  z-index: 30;
+}
+
+.menu__marca {
+  height: var(--cabecalho-altura);
+  display: flex;
+  align-items: center;
+  gap: var(--esp-3);
+  padding: 0 var(--esp-5);
+  font-family: var(--fonte-titulo);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--cor-texto);
+  letter-spacing: -0.02em;
+}
+
+/* Ícone da marca: azulejo em degradê com brilho no topo */
+.menu__marca .icone {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: var(--gradiente-marca);
+  color: #fff;
+  font-size: 21px;
+  box-shadow: var(--brilho-topo), 0 6px 14px -4px rgba(58, 71, 224, 0.55);
+}
+
+.menu__navegacao {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--esp-3) var(--esp-3) var(--esp-2);
+}
+
+.menu__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--esp-3);
+  padding: 10px var(--esp-4);
+  border-radius: var(--raio);
+  color: var(--cor-texto-2);
+  text-decoration: none;
+  font-weight: 600;
+  transition: background-color var(--rapido), color var(--rapido), transform var(--rapido) var(--suave);
+}
+
+.menu__item .icone {
+  font-size: 21px;
+  transition: transform var(--medio) var(--suave);
+}
+
+.menu__item:hover {
+  background: var(--cor-superficie-3);
+  color: var(--cor-texto);
+}
+
+.menu__item:hover .icone {
+  transform: scale(1.12);
+}
+
+/* Item ativo: fundo suave da cor de marca + barra indicadora à esquerda */
+.menu__item[aria-current="page"] {
+  background: var(--cor-primaria-suave);
+  color: var(--cor-primaria);
+}
+
+.menu__item[aria-current="page"] .icone {
+  font-variation-settings: "FILL" 1;
+}
+
+.menu__item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 9px;
+  bottom: 9px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--gradiente-primario);
+}
+
+.menu__rodape {
+  margin-top: auto;
+  padding: var(--esp-4) var(--esp-5);
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--cor-texto-3);
+  border-top: 1px solid var(--cor-borda);
+}
+
+.principal {
+  margin-left: var(--menu-largura);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.cabecalho {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--cabecalho-altura);
+  display: flex;
+  align-items: center;
+  gap: var(--esp-3);
+  padding: 0 var(--esp-5);
+  background: color-mix(in srgb, var(--cor-fundo) 78%, transparent);
+  backdrop-filter: blur(16px) saturate(1.5);
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.cabecalho__titulo {
+  font-family: var(--fonte-titulo);
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  margin-right: auto;
+}
+
+.conteudo {
+  width: 100%;
+  max-width: var(--conteudo-max);
+  margin: 0 auto;
+  padding: var(--esp-5) var(--esp-6) var(--esp-7);
+  flex: 1;
+}
+
+.conteudo:focus {
+  outline: none;
+}
+
+/* Entrada suave do conteúdo: os blocos sobem de leve, um após o outro. */
+@keyframes entrada {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.conteudo > * {
+  animation: entrada 0.42s var(--suave) backwards;
+}
+
+.conteudo > *:nth-child(2) {
+  animation-delay: 0.04s;
+}
+
+.conteudo > *:nth-child(3) {
+  animation-delay: 0.08s;
+}
+
+.conteudo > *:nth-child(4) {
+  animation-delay: 0.12s;
+}
+
+.conteudo > *:nth-child(n + 5) {
+  animation-delay: 0.16s;
+}
+
+/* Antes de conectar a pasta, só a tela de conexão aparece. */
+body.sem-conexao .menu,
+body.sem-conexao .cabecalho {
+  display: none;
+}
+
+body.sem-conexao .principal {
+  margin-left: 0;
+}
+
+/* Telas estreitas: menu só com ícones. */
+@media (max-width: 1100px) {
+  :root {
+    --menu-largura: 76px;
+  }
+
+  .menu__marca span:not(.icone),
+  .menu__item span:not(.icone),
+  .menu__rodape {
+    display: none;
+  }
+
+  .menu__marca,
+  .menu__item {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .menu__item {
+    height: 44px;
+  }
+
+  .conteudo {
+    padding-left: var(--esp-5);
+    padding-right: var(--esp-5);
+  }
+}
+
+/* Celular: o menu vira uma barra de navegação fixa na base da tela, ao alcance do polegar. */
+@media (max-width: 720px) {
+  :root {
+    --menu-largura: 0px;
+    --barra-base: 64px;
+  }
+
+  .menu {
+    inset: auto 0 0 0;
+    width: 100%;
+    height: var(--barra-base);
+    flex-direction: row;
+    border-right: 0;
+    border-top: 1px solid var(--cor-borda);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .menu__marca,
+  .menu__rodape {
+    display: none;
+  }
+
+  .menu__navegacao {
+    flex: 1;
+    flex-direction: row;
+    justify-content: space-around;
+    align-items: center;
+    padding: 0 var(--esp-1);
+    gap: 0;
+  }
+
+  .menu__item {
+    flex: 1;
+    height: 48px;
+    max-width: 64px;
+  }
+
+  .menu__item[aria-current="page"]::before {
+    left: 20%;
+    right: 20%;
+    top: -9px;
+    bottom: auto;
+    width: auto;
+    height: 3px;
+    border-radius: 0 0 4px 4px;
+  }
+
+  .principal {
+    padding-bottom: calc(var(--barra-base) + env(safe-area-inset-bottom));
+  }
+
+  .cabecalho {
+    padding: 0 var(--esp-3);
+    gap: var(--esp-2);
+  }
+
+  .cabecalho__titulo {
+    display: none;
+  }
+
+  .conteudo {
+    padding: var(--esp-4) var(--esp-3) var(--esp-6);
+  }
+
+  .avisos {
+    bottom: calc(var(--barra-base) + var(--esp-3)) !important;
+  }
+}

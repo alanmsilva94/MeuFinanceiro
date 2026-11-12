@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Testes – MeuFinanceiro</title>
+  <link rel="stylesheet" href="css/fontes.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/componentes.css">
+  <style>
+    body { padding: 24px; max-width: 900px; margin: 0 auto; }
+    h1 { margin-bottom: 8px; }
+    .resumo { margin: 16px 0; }
+    .ok { color: var(--cor-receita); }
+    .falha { color: var(--cor-despesa); font-weight: 600; }
+    td code { font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Testes automáticos</h1>
+  <p class="texto-secundario">Abra este arquivo no navegador para conferir as funções do núcleo. Nenhum dado é lido ou gravado.</p>
+  <div class="resumo painel" id="resumo"></div>
+  <div class="painel tabela-rolagem"><table class="tabela" id="resultados"><thead><tr><th>Teste</th><th>Resultado</th></tr></thead><tbody></tbody></table></div>
+
+  <script src="js/nucleo/app.js"></script>
+  <script src="js/nucleo/util.js"></script>
+  <script src="js/nucleo/xlsx.js"></script>
+  <script src="js/calculo/motor.js"></script>
+  <script src="js/calculo/recorrencias.js"></script>
+  <script src="js/calculo/cartoes.js"></script>
+  <script src="js/calculo/investimentos.js"></script>
+  <script src="js/calculo/painel.js"></script>
+  <script src="js/dados/comum.js"></script>
+  <script src="js/nucleo/backup.js"></script>
+  <script src="js/dados/contas.js"></script>
+  <script src="js/dados/categorias.js"></script>
+  <script src="js/dados/lancamentos.js"></script>
+  <script src="js/dados/recorrencias.js"></script>
+  <script src="js/dados/cartoes.js"></script>
+  <script src="js/dados/faturas.js"></script>
+  <script src="js/dados/compras.js"></script>
+  <script src="js/dados/investimentos.js"></script>
+  <script src="js/dados/exportacao.js"></script>
+  <script>
+    // Se um teste quebrar de vez (erro de programação, não falha de conferência), mostra o erro aqui.
+    function mostrarErroDosTestes(motivo) {
+      document.getElementById('resumo').innerHTML =
+        '<span class="falha">Os testes pararam por um erro: </span><code>' + App.util.escaparHtml(String((motivo && motivo.stack) || motivo)) + '</code>';
+    }
+    window.addEventListener('unhandledrejection', function (e) { mostrarErroDosTestes(e.reason); });
+    window.addEventListener('error', function (e) { mostrarErroDosTestes(e.error || e.message); });
+
+    (async function () {
+      const U = App.util;
+      const resultados = [];
+
+      // Lança erro de validação esperado e confere um trecho da mensagem.
+      async function erro(nome, funcao, trecho) {
+        try {
+          await funcao();
+          resultados.push({ nome, ok: false, detalhe: 'deveria ter recusado' });
+        } catch (e) {
+          const ok = e instanceof App.ErroValidacao && e.message.includes(trecho);
+          resultados.push({ nome, ok, detalhe: ok ? '' : 'mensagem recebida: ' + e.message });
+        }
+      }
+
+      // Armazenamento falso, só em memória: nada é lido nem gravado em disco.
+      const memoria = {};
+      let gravacoes = [];
+      App.storage = {
+        obter: function (n) { return memoria[n]; },
+        salvar: async function (n) { gravacoes.push(n); },
+      };
+      function zerarDados() {
+        ['config', 'contas', 'categorias', 'lancamentos', 'recorrencias', 'cartoes', 'compras_cartao', 'faturas', 'investimentos']
+          .forEach(function (n) { memoria[n] = { versao: 1, registros: [] }; });
+        gravacoes = [];
+      }
+      zerarDados();
+
+      function igual(nome, obtido, esperado) {
+        const ok = JSON.stringify(obtido) === JSON.stringify(esperado);
+        resultados.push({ nome, ok, detalhe: ok ? '' : 'obtido ' + JSON.stringify(obtido) + ', esperado ' + JSON.stringify(esperado) });
+      }
+
+      // Dinheiro
+      igual('paraCentavos: "1.234,56"', U.paraCentavos('1.234,56'), 123456);
+      igual('paraCentavos: "1234,5"', U.paraCentavos('1234,5'), 123450);
+      igual('paraCentavos: "R$ 1.200"', U.paraCentavos('R$ 1.200'), 120000);
+      igual('paraCentavos: "0,01"', U.paraCentavos('0,01'), 1);
+      igual('paraCentavos: "-10,00"', U.paraCentavos('-10,00'), -1000);
+      igual('paraCentavos: "1.23,45" é inválido', U.paraCentavos('1.23,45'), null);
+      igual('paraCentavos: "12,345" é inválido', U.paraCentavos('12,345'), null);
+      igual('paraCentavos: "abc" é inválido', U.paraCentavos('abc'), null);
+      igual('paraCentavos: vazio é inválido', U.paraCentavos(''), null);
+      igual('paraCentavos: número não é aceito', U.paraCentavos(10), null);
+      igual('formatarMoeda: 123456', U.formatarMoeda(123456).replace(/\s/g, ' '), 'R$ 1.234,56');
+      igual('formatarMoeda: valor não inteiro', U.formatarMoeda(10.5), '—');
+      igual('centavosParaCampo: 1234567', U.centavosParaCampo(1234567), '12.345,67');
+      igual('centavosParaCampo: -5', U.centavosParaCampo(-5), '-0,05');
+      igual('ida e volta: 0,1 + 0,2 sem erro de arredondamento', U.paraCentavos('0,10') + U.paraCentavos('0,20'), 30);
+
+      // Datas
+      igual('ehDataISO: 2026-02-29 não existe', U.ehDataISO('2026-02-29'), false);
+      igual('ehDataISO: 2028-02-29 existe', U.ehDataISO('2028-02-29'), true);
+      igual('ehDataISO: 2026-13-01 é inválida', U.ehDataISO('2026-13-01'), false);
+      igual('formatarData', U.formatarData('2026-11-10'), '10/11/2026');
+      igual('somarMeses: virada de ano para frente', U.somarMeses('2026-12', 1), '2027-01');
+      igual('somarMeses: virada de ano para trás', U.somarMeses('2027-01', -1), '2026-12');
+      igual('somarMeses: 24 meses', U.somarMeses('2026-11', 24), '2028-11');
+      igual('ultimoDiaDoMes: fevereiro de 2026', U.ultimoDiaDoMes(2026, 2), 28);
+      igual('nomeMes', U.nomeMes('2026-11'), 'Novembro de 2026');
+      igual('ehMesISO: 2026-00 é inválido', U.ehMesISO('2026-00'), false);
+
+      // IDs e texto
+      igual('gerarId: prefixo e tamanho', /^lan_[0-9a-f]{12}$/.test(U.gerarId('lan')), true);
+      igual('gerarId: dois IDs diferentes', U.gerarId('x') !== U.gerarId('x'), true);
+      igual('escaparHtml', U.escaparHtml('<b>"A&B"</b>'), '&lt;b&gt;&quot;A&amp;B&quot;&lt;/b&gt;');
+
+      // ---------- Motor de cálculo: saldos (RF-02, RF-03, regras 6.1 e 6.2) ----------
+      const C = App.calc;
+      const contasT = [
+        { id: 'a', saldoInicial: 100000, ativa: true },
+        { id: 'b', saldoInicial: 0, ativa: true },
+        { id: 'c', saldoInicial: 5000, ativa: false },
+      ];
+      const lan = (tipo, valor, contaId, extra) => Object.assign(
+        { tipo, valor, contaId, contaDestinoId: null, situacao: tipo === 'receita' || tipo === 'resgate' ? 'recebido' : 'pago' }, extra || {});
+      igual('saldo: sem lançamentos é o saldo inicial', C.saldos(contasT, [])['a'], 100000);
+      igual('saldo: receita recebida soma', C.saldos(contasT, [lan('receita', 25000, 'a')])['a'], 125000);
+      igual('saldo: despesa paga subtrai', C.saldos(contasT, [lan('despesa', 30000, 'a')])['a'], 70000);
+      igual('saldo: pendente não altera o saldo', C.saldos(contasT, [lan('despesa', 30000, 'a', { situacao: 'pendente' })])['a'], 100000);
+      igual('saldo: transferência sai de uma conta', C.saldos(contasT, [lan('transferencia', 40000, 'a', { contaDestinoId: 'b' })])['a'], 60000);
+      igual('saldo: transferência entra na outra', C.saldos(contasT, [lan('transferencia', 40000, 'a', { contaDestinoId: 'b' })])['b'], 40000);
+      igual('saldo: transferência não muda o total', (function () {
+        const s = C.saldos(contasT, [lan('transferencia', 40000, 'a', { contaDestinoId: 'b' })]);
+        return s.a + s.b;
+      })(), 100000);
+      igual('saldo: aporte sai da conta', C.saldos(contasT, [lan('aporte', 10000, 'a')])['a'], 90000);
+      igual('saldo: resgate entra na conta', C.saldos(contasT, [lan('resgate', 10000, 'a')])['a'], 110000);
+      igual('saldo: pagamento de fatura sai da conta', C.saldos(contasT, [lan('pagamento_fatura', 20000, 'a')])['a'], 80000);
+      igual('saldo: taxa de investimento sai da conta', C.saldos(contasT, [lan('taxa_investimento', 500, 'a')])['a'], 99500);
+      igual('saldo: saldo inicial negativo', C.saldos([{ id: 'x', saldoInicial: -5000 }], [lan('receita', 2000, 'x')])['x'], -3000);
+      igual('saldo: lançamento de conta desconhecida é ignorado', C.saldos(contasT, [lan('receita', 999, 'zzz')])['a'], 100000);
+      igual('saldoTotal: soma todas as contas, inclusive as inativas (o dinheiro nelas continua existindo)', C.saldoTotal(contasT, C.saldos(contasT, [])), 105000);
+
+      // ---------- Contas (RF-01 a RF-04) ----------
+      const base = { nome: 'Nubank Conta', instituicao: 'Nubank', tipo: 'corrente', saldoInicial: 250000, dataAbertura: '2026-01-01' };
+      igual('contas: criar grava só contas.json', (await App.contas.criar(base), gravacoes), ['contas']);
+      igual('contas: conta criada nasce ativa com id acc_', (function () {
+        const c = App.contas.listar()[0];
+        return c.ativa === true && /^acc_[0-9a-f]{12}$/.test(c.id) && !!c.criadoEm;
+      })(), true);
+      await erro('contas: nome em branco', () => App.contas.criar(Object.assign({}, base, { nome: '  ' })), 'nome da conta');
+      await erro('contas: nome repetido (sem diferenciar maiúsculas)', () => App.contas.criar(Object.assign({}, base, { nome: 'nubank conta' })), 'Já existe');
+      await erro('contas: tipo inválido', () => App.contas.criar(Object.assign({}, base, { nome: 'X', tipo: 'xyz' })), 'tipo');
+      await erro('contas: saldo inicial inválido', () => App.contas.criar(Object.assign({}, base, { nome: 'X', saldoInicial: null })), 'saldo inicial');
+      await erro('contas: data inválida', () => App.contas.criar(Object.assign({}, base, { nome: 'X', dataAbertura: '2026-02-30' })), 'data de abertura');
+      igual('contas: conta recusada não é cadastrada', App.contas.listar().length, 1);
+      await App.contas.criar(Object.assign({}, base, { nome: 'Carteira', instituicao: 'Dinheiro', tipo: 'dinheiro', saldoInicial: 0 }));
+      const contaA = App.contas.listar().find(c => c.nome === 'Nubank Conta');
+      const contaB = App.contas.listar().find(c => c.nome === 'Carteira');
+      await App.contas.editar(contaA.id, Object.assign({}, base, { nome: 'Nubank Principal' }));
+      igual('contas: editar muda o nome', App.contas.obter(contaA.id).nome, 'Nubank Principal');
+      await App.contas.editar(contaA.id, Object.assign({}, base, { nome: 'Nubank Principal' }));
+      igual('contas: editar mantendo o próprio nome não dá conflito', App.contas.obter(contaA.id).nome, 'Nubank Principal');
+      igual('contas: lista em ordem alfabética', App.contas.listar().map(c => c.nome), ['Carteira', 'Nubank Principal']);
+
+      // ---------- Transferências (RF-03) ----------
+      const transf = { contaId: contaA.id, contaDestinoId: contaB.id, valor: 40000, data: '2026-11-10', observacao: 'Para gastos do mês' };
+      await App.lancamentos.criarTransferencia(transf);
+      const t1 = App.lancamentos.listarTransferencias('2026-11')[0];
+      igual('transferência: registro correto', [t1.tipo, t1.situacao, t1.categoriaId, t1.dataPagamento, t1.valor], ['transferencia', 'pago', null, '2026-11-10', 40000]);
+      igual('transferência: saldos das duas contas', (function () {
+        const s = App.contas.saldos();
+        return [s[contaA.id], s[contaB.id]];
+      })(), [210000, 40000]);
+      await erro('transferência: mesma conta', () => App.lancamentos.criarTransferencia(Object.assign({}, transf, { contaDestinoId: contaA.id })), 'diferentes');
+      await erro('transferência: valor zero', () => App.lancamentos.criarTransferencia(Object.assign({}, transf, { valor: 0 })), 'maior que zero');
+      await erro('transferência: valor negativo', () => App.lancamentos.criarTransferencia(Object.assign({}, transf, { valor: -100 })), 'maior que zero');
+      await erro('transferência: data inválida', () => App.lancamentos.criarTransferencia(Object.assign({}, transf, { data: '' })), 'data');
+      await erro('transferência: conta inexistente', () => App.lancamentos.criarTransferencia(Object.assign({}, transf, { contaDestinoId: 'acc_nada' })), 'destino');
+      igual('transferência: recusadas não foram gravadas', D_registros('lancamentos').length, 1);
+      igual('transferência: filtro por mês', App.lancamentos.listarTransferencias('2026-10').length, 0);
+      await App.lancamentos.editarTransferencia(t1.id, Object.assign({}, transf, { valor: 10000, data: '2026-11-12' }));
+      igual('transferência: editar muda valor e data', (function () {
+        const t = App.lancamentos.obter(t1.id);
+        return [t.valor, t.dataPagamento, t.dataCompetencia];
+      })(), [10000, '2026-11-12', '2026-11-12']);
+
+      // Conta inativa (RF-04): não recebe novas transferências, mas a antiga continua editável.
+      await App.contas.definirAtiva(contaB.id, false);
+      await erro('transferência: conta inativa não é aceita em nova transferência', () => App.lancamentos.criarTransferencia(transf), 'inativa');
+      await App.lancamentos.editarTransferencia(t1.id, Object.assign({}, transf, { valor: 12000 }));
+      igual('transferência: editar mantém conta que foi inativada depois', App.lancamentos.obter(t1.id).valor, 12000);
+      await erro('contas: não exclui conta com lançamentos (RF-04)', () => App.contas.excluir(contaB.id), 'Inative');
+      await App.lancamentos.excluirTransferencia(t1.id);
+      igual('transferência: excluir devolve os saldos', App.contas.saldos()[contaA.id], 250000);
+      await App.contas.excluir(contaB.id);
+      igual('contas: exclui conta sem lançamentos', App.contas.listar().map(c => c.nome), ['Nubank Principal']);
+
+      // ---------- Categorias (RF-05 a RF-07) ----------
+      const cat = { nome: 'Moradia', natureza: 'despesa', cor: '#1D4ED8' };
+      await App.categorias.criar(cat);
+      igual('categorias: criar normaliza a cor para minúsculas', App.categorias.listar('despesa')[0].cor, '#1d4ed8');
+      await erro('categorias: nome repetido no mesmo tipo', () => App.categorias.criar(Object.assign({}, cat, { nome: 'moradia' })), 'Já existe');
+      await App.categorias.criar(Object.assign({}, cat, { natureza: 'receita' }));
+      igual('categorias: mesmo nome pode existir em receita e despesa', App.categorias.listar().length, 2);
+      await erro('categorias: cor inválida', () => App.categorias.criar(Object.assign({}, cat, { nome: 'Y', cor: 'azul' })), 'cor');
+      await erro('categorias: tipo inválido', () => App.categorias.criar(Object.assign({}, cat, { nome: 'Y', natureza: 'x' })), 'receita ou de despesa');
+      const moradia = App.categorias.listar('despesa')[0];
+      await App.categorias.criar(Object.assign({}, cat, { nome: 'Lazer' }));
+      const lazer = App.categorias.listar('despesa').find(c => c.nome === 'Lazer');
+      const receitaMoradia = App.categorias.listar('receita')[0];
+
+      D_registros('lancamentos').push({ id: 'lan_1', tipo: 'despesa', categoriaId: moradia.id, contaId: contaA.id, valor: 100, situacao: 'pago' });
+      D_registros('recorrencias').push({ id: 'rec_1', modelo: { categoriaId: moradia.id, contaId: contaA.id } });
+      D_registros('compras_cartao').push({ id: 'cmp_1', categoriaId: moradia.id });
+      igual('categorias: uso conta lançamentos, recorrências e compras', App.categorias.usoDaCategoria(moradia.id), { lancamentos: 1, recorrencias: 1, compras: 1, total: 3 });
+      await erro('categorias: não exclui categoria em uso (RF-06)', () => App.categorias.excluir(moradia.id), 'Troque-a');
+      await erro('categorias: não muda tipo de categoria em uso', () => App.categorias.editar(moradia.id, Object.assign({}, cat, { natureza: 'receita' })), 'em uso');
+      await erro('categorias: troca exige mesmo tipo', () => App.categorias.trocarEExcluir(moradia.id, receitaMoradia.id), 'mesmo tipo');
+      await erro('categorias: troca exige destino diferente', () => App.categorias.trocarEExcluir(moradia.id, moradia.id), 'diferente');
+      igual('categorias: recusas não apagaram nada', App.categorias.listar().length, 3);
+      gravacoes = [];
+      await App.categorias.trocarEExcluir(moradia.id, lazer.id);
+      igual('categorias: troca move lançamento, recorrência e compra', [
+        D_registros('lancamentos')[0].categoriaId, D_registros('recorrencias')[0].modelo.categoriaId, D_registros('compras_cartao')[0].categoriaId,
+      ], [lazer.id, lazer.id, lazer.id]);
+      igual('categorias: troca exclui a categoria antiga', App.categorias.obter(moradia.id), undefined);
+      igual('categorias: troca grava todos os arquivos afetados', gravacoes.slice().sort(), ['categorias', 'compras_cartao', 'lancamentos', 'recorrencias']);
+      await App.categorias.excluir(receitaMoradia.id);
+      igual('categorias: exclui categoria sem uso', App.categorias.listar().map(c => c.nome), ['Lazer']);
+
+      // ---------- Entradas e saídas (RF-08 a RF-12) ----------
+      ['lancamentos', 'recorrencias', 'compras_cartao'].forEach(n => { D_registros(n).length = 0; }); // limpa o que os testes anteriores deixaram
+      await App.categorias.criar({ nome: 'Salário', natureza: 'receita', cor: '#15803d' });
+      const catRec = App.categorias.listar('receita')[0];
+      const catDesp = App.categorias.listar('despesa')[0];
+      const sai = { descricao: 'Conta de luz', valor: 18750, categoriaId: catDesp.id, contaId: contaA.id, dataCompetencia: '2026-11-01', dataVencimento: '2026-11-10', situacao: 'pendente', dataPagamento: '', observacao: '' };
+      await App.lancamentos.criarMovimento('despesa', sai);
+      const luz = App.lancamentos.listarMovimentos('despesa')[0];
+      igual('saída: nasce pendente, sem data de pagamento e sem recorrência', [luz.tipo, luz.situacao, luz.dataPagamento, luz.recorrenciaId, luz.origem], ['despesa', 'pendente', null, null, null]);
+      igual('saída: pendente não altera o saldo', App.contas.saldos()[contaA.id], 250000);
+      await erro('saída: descrição em branco', () => App.lancamentos.criarMovimento('despesa', { ...sai, descricao: ' ' }), 'descrição');
+      await erro('saída: valor zero', () => App.lancamentos.criarMovimento('despesa', { ...sai, valor: 0 }), 'maior que zero');
+      await erro('saída: valor não inteiro', () => App.lancamentos.criarMovimento('despesa', { ...sai, valor: 10.5 }), 'maior que zero');
+      await erro('saída: sem categoria', () => App.lancamentos.criarMovimento('despesa', { ...sai, categoriaId: '' }), 'categoria');
+      await erro('saída: categoria de receita não vale', () => App.lancamentos.criarMovimento('despesa', { ...sai, categoriaId: catRec.id }), 'não é de despesa');
+      await erro('entrada: categoria de despesa não vale', () => App.lancamentos.criarMovimento('receita', { ...sai, categoriaId: catDesp.id }), 'não é de receita');
+      await erro('saída: conta inexistente', () => App.lancamentos.criarMovimento('despesa', { ...sai, contaId: 'acc_x' }), 'Escolha a conta');
+      await erro('saída: pago exige data de pagamento (RF-09)', () => App.lancamentos.criarMovimento('despesa', { ...sai, situacao: 'pago' }), 'data em que');
+      await erro('saída: "recebido" não vale para despesa', () => App.lancamentos.criarMovimento('despesa', { ...sai, situacao: 'recebido', dataPagamento: '2026-11-10' }), 'situação');
+      await erro('saída: competência inválida', () => App.lancamentos.criarMovimento('despesa', { ...sai, dataCompetencia: '' }), 'competência');
+      await erro('saída: vencimento inválido', () => App.lancamentos.criarMovimento('despesa', { ...sai, dataVencimento: '2026-02-30' }), 'vencimento');
+      await erro('lançamento: tipo desconhecido', () => App.lancamentos.criarMovimento('aporte', sai), 'Tipo');
+      igual('saída: recusadas não foram gravadas', App.lancamentos.listarMovimentos('despesa').length, 1);
+
+      await App.lancamentos.efetivar(luz.id, '2026-11-10');
+      igual('saída: marcar como paga define situação e data', [App.lancamentos.obter(luz.id).situacao, App.lancamentos.obter(luz.id).dataPagamento], ['pago', '2026-11-10']);
+      igual('saída: paga reduz o saldo da conta', App.contas.saldos()[contaA.id], 231250);
+      await erro('saída: efetivar exige data válida', () => App.lancamentos.efetivar(luz.id, ''), 'data');
+      await App.lancamentos.desfazerEfetivacao(luz.id);
+      igual('saída: desfazer volta para pendente e apaga a data', [App.lancamentos.obter(luz.id).situacao, App.lancamentos.obter(luz.id).dataPagamento], ['pendente', null]);
+      igual('saída: saldo volta ao anterior', App.contas.saldos()[contaA.id], 250000);
+
+      await App.lancamentos.criarMovimento('receita', { descricao: 'Salário', valor: 500000, categoriaId: catRec.id, contaId: contaA.id, dataCompetencia: '2026-11-05', dataVencimento: '', situacao: 'recebido', dataPagamento: '2026-11-05', observacao: '' });
+      igual('entrada: recebida soma no saldo da conta', App.contas.saldos()[contaA.id], 750000);
+      igual('entrada: não aparece na lista de saídas', App.lancamentos.listarMovimentos('despesa').length, 1);
+
+      await App.lancamentos.editarMovimento(luz.id, { ...sai, valor: 20000, situacao: 'pendente', dataPagamento: '2026-11-10' });
+      igual('editar: pendente descarta a data de pagamento informada', [App.lancamentos.obter(luz.id).valor, App.lancamentos.obter(luz.id).dataPagamento], [20000, null]);
+      await App.lancamentos.editarMovimento(luz.id, { ...sai, valor: 20000, situacao: 'pago', dataPagamento: '2026-11-11' });
+      igual('editar: pago com data fica pago', [App.lancamentos.obter(luz.id).situacao, App.lancamentos.obter(luz.id).dataPagamento], ['pago', '2026-11-11']);
+      await erro('editar: lançamento inexistente', () => App.lancamentos.editarMovimento('lan_nada', sai), 'não encontrado');
+
+      // Filtros (RF-10) e totais (RF-12)
+      await App.lancamentos.criarMovimento('despesa', { ...sai, descricao: 'Internet', valor: 10000, dataCompetencia: '2026-12-01', dataVencimento: '2026-12-05' });
+      igual('filtro: lista em ordem de competência, mais recente primeiro', App.lancamentos.listarMovimentos('despesa').map(l => l.descricao), ['Internet', 'Conta de luz']);
+      igual('filtro: por período (novembro)', App.lancamentos.listarMovimentos('despesa', { de: '2026-11-01', ate: '2026-11-30' }).map(l => l.descricao), ['Conta de luz']);
+      igual('filtro: limites do período são incluídos', App.lancamentos.listarMovimentos('despesa', { de: '2026-11-01', ate: '2026-12-01' }).length, 2);
+      igual('filtro: por situação pendente', App.lancamentos.listarMovimentos('despesa', { situacao: 'pendente' }).map(l => l.descricao), ['Internet']);
+      igual('filtro: por situação pago', App.lancamentos.listarMovimentos('despesa', { situacao: 'pago' }).map(l => l.descricao), ['Conta de luz']);
+      igual('filtro: por categoria inexistente', App.lancamentos.listarMovimentos('despesa', { categoriaId: 'cat_nada' }).length, 0);
+      igual('filtro: por conta', App.lancamentos.listarMovimentos('despesa', { contaId: contaA.id }).length, 2);
+      igual('totais: realizado, pendente e total (RF-12)', (({ realizado, pendente, total, quantidade }) => [realizado, pendente, total, quantidade])(C.totaisPorSituacao(App.lancamentos.listarMovimentos('despesa'))), [20000, 10000, 30000, 2]);
+      igual('totais: lista vazia', C.totaisPorSituacao([]).total, 0);
+
+      // Conta inativa e exclusão
+      await App.contas.criar({ ...base, nome: 'Reserva', saldoInicial: 0 });
+      const reserva = App.contas.listar().find(c => c.nome === 'Reserva');
+      await App.lancamentos.criarTransferencia({ contaId: contaA.id, contaDestinoId: reserva.id, valor: 1000, data: '2026-11-20', observacao: '' });
+      const transferencia = App.lancamentos.listarTransferencias('2026-11')[0];
+      await erro('excluir: não apaga transferência pela tela de lançamentos', () => App.lancamentos.excluirMovimento(transferencia.id), 'não encontrado');
+      await erro('editar: não altera transferência como se fosse saída', () => App.lancamentos.editarMovimento(transferencia.id, sai), 'não encontrado');
+      await App.contas.definirAtiva(reserva.id, false);
+      await erro('saída: conta inativa não é aceita em lançamento novo', () => App.lancamentos.criarMovimento('despesa', { ...sai, contaId: reserva.id }), 'inativa');
+      const saldoAntes = App.contas.saldos()[contaA.id];
+      await App.lancamentos.excluirMovimento(luz.id);
+      igual('excluir: a saída paga some e o saldo é recalculado', [App.lancamentos.obter(luz.id), App.contas.saldos()[contaA.id]], [undefined, saldoAntes + 20000]);
+
+      // ---------- Datas das recorrências (RF-13) ----------
+      igual('somarDias: atravessa fevereiro', U.somarDias('2026-02-27', 3), '2026-03-02');
+      igual('somarDias: virada de ano', U.somarDias('2026-12-31', 1), '2027-01-01');
+      igual('somarDias: 29/02 em ano bissexto', U.somarDias('2028-02-28', 1), '2028-02-29');
+      igual('somarDias: negativo', U.somarDias('2026-03-01', -1), '2026-02-28');
+      igual('somarMesesDaData: 31/01 + 1 mês = último dia de fevereiro', U.somarMesesDaData('2026-01-31', 1), '2026-02-28');
+      igual('somarMesesDaData: 31/01 + 2 meses volta ao dia 31', U.somarMesesDaData('2026-01-31', 2), '2026-03-31');
+      igual('somarMesesDaData: fevereiro bissexto', U.somarMesesDaData('2028-01-31', 1), '2028-02-29');
+      igual('somarMesesDaData: meses para trás', U.somarMesesDaData('2026-11-15', -11), '2025-12-15');
+      igual('somarMesesDaData: 12 meses', U.somarMesesDaData('2026-02-28', 12), '2027-02-28');
+      igual('diferencaDias: para frente', U.diferencaDias('2026-11-01', '2026-11-10'), 9);
+      igual('diferencaDias: para trás', U.diferencaDias('2026-11-10', '2026-11-01'), -9);
+      igual('diferencaDias: de fevereiro para março', U.diferencaDias('2026-02-28', '2026-03-01'), 1);
+      igual('ultimoDiaDaCompetencia', U.ultimoDiaDaCompetencia('2028-02'), '2028-02-29');
+      const RC = App.calc.recorrencias;
+      igual('fimDoMesSeguinte: novembro', RC.fimDoMesSeguinte('2026-11-10'), '2026-12-31');
+      igual('fimDoMesSeguinte: dezembro vira janeiro', RC.fimDoMesSeguinte('2026-12-15'), '2027-01-31');
+      igual('ocorrências mensais no dia 31', RC.ocorrencias({ periodicidade: 'mensal', dataInicio: '2026-01-31' }, { ate: '2026-05-31' }),
+        ['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31']);
+      igual('ocorrências semanais', RC.ocorrencias({ periodicidade: 'semanal', dataInicio: '2026-11-02' }, { ate: '2026-11-23' }),
+        ['2026-11-02', '2026-11-09', '2026-11-16', '2026-11-23']);
+      igual('ocorrências anuais em 29/02', RC.ocorrencias({ periodicidade: 'anual', dataInicio: '2024-02-29' }, { ate: '2028-12-31' }),
+        ['2024-02-29', '2025-02-28', '2026-02-28', '2027-02-28', '2028-02-29']);
+      igual('ocorrências a cada 10 dias', RC.ocorrencias({ periodicidade: 'dias', intervaloDias: 10, dataInicio: '2026-11-01' }, { ate: '2026-11-30' }),
+        ['2026-11-01', '2026-11-11', '2026-11-21']);
+      igual('ocorrências: só depois de uma data', RC.ocorrencias({ periodicidade: 'mensal', dataInicio: '2026-01-10' }, { depois: '2026-02-10', ate: '2026-04-30' }),
+        ['2026-03-10', '2026-04-10']);
+      igual('ocorrências: respeitam a data final', RC.ocorrencias({ periodicidade: 'mensal', dataInicio: '2026-01-10', dataFim: '2026-03-09' }, { ate: '2026-12-31' }),
+        ['2026-01-10', '2026-02-10']);
+      igual('ocorrências: limite de quantidade', RC.ocorrencias({ periodicidade: 'semanal', dataInicio: '2026-01-01' }, { ate: '2026-12-31', maximo: 3 }).length, 3);
+      igual('ocorrências: intervalo inválido não gera', RC.ocorrencias({ periodicidade: 'dias', intervaloDias: 0, dataInicio: '2026-01-01' }, { ate: '2026-12-31' }), []);
+      igual('ocorrências: periodicidade desconhecida não gera', RC.ocorrencias({ periodicidade: 'x', dataInicio: '2026-01-01' }, { ate: '2026-12-31' }), []);
+
+      // ---------- Recorrências: geração e edição (RF-13 a RF-15) ----------
+      zerarDados();
+      await App.contas.criar({ ...base, nome: 'Principal' });
+      const cP = App.contas.listar()[0];
+      await App.categorias.criar({ nome: 'Moradia', natureza: 'despesa', cor: '#1d4ed8' });
+      await App.categorias.criar({ nome: 'Salário', natureza: 'receita', cor: '#15803d' });
+      const catM = App.categorias.listar('despesa')[0];
+      const catS = App.categorias.listar('receita')[0];
+      const HOJE = '2026-11-10';
+      const rec = App.recorrencias;
+      const chaves = () => D_registros('lancamentos').filter(l => l.origem).map(l => l.origem.recorrenciaId + '|' + l.origem.dataOcorrencia);
+      const doRec = (id) => D_registros('lancamentos').filter(l => l.recorrenciaId === id).sort((a, b) => a.dataCompetencia.localeCompare(b.dataCompetencia));
+      const aluguel = { descricao: 'Aluguel', valor: 150000, categoriaId: catM.id, contaId: cP.id, dataCompetencia: '2026-11-05', dataVencimento: '2026-11-10', situacao: 'pendente', dataPagamento: '', observacao: 'Obs' };
+
+      // Criação a partir do formulário
+      const r1 = await rec.criarDoFormulario('despesa', aluguel, { periodicidade: 'mensal' }, HOJE);
+      const aluguelRec = rec.listar()[0];
+      igual('recorrência: criar gera as ocorrências até o fim do mês seguinte', [r1.salvo, r1.geradas, doRec(aluguelRec.id).map(l => l.dataCompetencia)], [true, 1, ['2026-11-05', '2026-12-05']]);
+      igual('recorrência: o lançamento digitado é a primeira ocorrência', [doRec(aluguelRec.id)[0].observacao, doRec(aluguelRec.id)[0].origem.dataOcorrencia], ['Obs', '2026-11-05']);
+      igual('recorrência: ocorrência gerada nasce pendente e mantém o prazo de vencimento', (({ situacao, dataVencimento, dataPagamento, observacao, valor }) => [situacao, dataVencimento, dataPagamento, observacao, valor])(doRec(aluguelRec.id)[1]), ['pendente', '2026-12-10', null, '', 150000]);
+      igual('recorrência: modelo guarda ultimaGerada e dias até o vencimento', [aluguelRec.ultimaGerada, aluguelRec.modelo.diasAteVencimento, aluguelRec.ativa], ['2026-12-05', 5, true]);
+      igual('recorrência: lançamento vinculado tem recorrenciaId', doRec(aluguelRec.id)[0].recorrenciaId, aluguelRec.id);
+
+      // Geração ao abrir, sem duplicar (RF-14)
+      igual('geração: repetir no mesmo dia não duplica', (await rec.gerarPendentes(HOJE)).geradas, 0);
+      igual('geração: um mês depois gera o mês seguinte', (await rec.gerarPendentes('2026-12-20')).geradas, 1);
+      igual('geração: total de ocorrências', doRec(aluguelRec.id).map(l => l.dataCompetencia), ['2026-11-05', '2026-12-05', '2027-01-05']);
+      const jan = doRec(aluguelRec.id)[2];
+      await App.lancamentos.excluirMovimento(jan.id);
+      igual('geração: ocorrência apagada não volta', (await rec.gerarPendentes('2026-12-20')).geradas, 0);
+      igual('geração: segue adiante sem recriar a apagada', [(await rec.gerarPendentes('2027-01-20')).geradas, doRec(aluguelRec.id).map(l => l.dataCompetencia)], [1, ['2026-11-05', '2026-12-05', '2027-02-05']]);
+      aluguelRec.ultimaGerada = null; // simula um cursor perdido: a segurança por chave impede duplicar
+      await rec.gerarPendentes('2027-01-20');
+      igual('geração: mesmo com o cursor perdido, nenhuma ocorrência fica duplicada', chaves().length === new Set(chaves()).size, true);
+      igual('geração: cursor perdido só recria a que faltava', doRec(aluguelRec.id).map(l => l.dataCompetencia), ['2026-11-05', '2026-12-05', '2027-01-05', '2027-02-05']);
+
+      // Validações da criação
+      const antes = [D_registros('recorrencias').length, D_registros('lancamentos').length];
+      await erro('recorrência: "a cada N dias" sem intervalo', () => rec.criarDoFormulario('despesa', aluguel, { periodicidade: 'dias', intervaloDias: '' }, HOJE), 'quantos em quantos dias');
+      await erro('recorrência: periodicidade desconhecida', () => rec.criarDoFormulario('despesa', aluguel, { periodicidade: 'x' }, HOJE), 'periodicidade');
+      await erro('recorrência: data final antes da primeira ocorrência', () => rec.criarDoFormulario('despesa', aluguel, { periodicidade: 'mensal', dataFim: '2026-10-01' }, HOJE), 'não pode ser anterior');
+      await erro('recorrência: data final inválida', () => rec.criarDoFormulario('despesa', aluguel, { periodicidade: 'mensal', dataFim: '2026-02-30' }, HOJE), 'inválida');
+      await erro('recorrência: início muito antigo geraria lançamentos demais', () => rec.criarDoFormulario('despesa', { ...aluguel, dataCompetencia: '2020-01-01' }, { periodicidade: 'semanal' }, HOJE), 'geraria');
+      await erro('recorrência: lançamento inválido também recusa', () => rec.criarDoFormulario('despesa', { ...aluguel, valor: 0 }, { periodicidade: 'mensal' }, HOJE), 'maior que zero');
+      igual('recorrência: recusadas não criaram nada', [D_registros('recorrencias').length, D_registros('lancamentos').length], antes);
+
+      // Data final e situação da primeira ocorrência
+      const freela = { descricao: 'Freela', valor: 20000, categoriaId: catS.id, contaId: cP.id, dataCompetencia: '2026-11-02', dataVencimento: '', situacao: 'recebido', dataPagamento: '2026-11-02', observacao: '' };
+      const r2 = await rec.criarDoFormulario('receita', freela, { periodicidade: 'semanal', dataFim: '2026-11-20' }, HOJE);
+      const freelaRec = rec.listar().find(r => r.modelo.descricao === 'Freela');
+      igual('recorrência: data final limita as ocorrências', [r2.geradas, doRec(freelaRec.id).map(l => l.dataCompetencia)], [2, ['2026-11-02', '2026-11-09', '2026-11-16']]);
+      igual('recorrência: primeira ocorrência mantém a situação digitada, as outras ficam pendentes', doRec(freelaRec.id).map(l => l.situacao), ['recebido', 'pendente', 'pendente']);
+      igual('recorrência: sem vencimento informado, as ocorrências não têm vencimento', doRec(freelaRec.id).map(l => l.dataVencimento), [null, null, null]);
+      igual('recorrência: só o recebido entra no saldo', App.contas.saldos()[cP.id], 270000);
+      // Com a data final, a recorrência semanal para; só o aluguel (sem fim) continua: gera 05/03 e 05/04.
+      igual('geração: recorrência com data final não gera depois dela', [(await rec.gerarPendentes('2027-03-20')).geradas, doRec(freelaRec.id).length], [2, 3]);
+
+      // RF-15: editar uma ocorrência isolada não altera o modelo
+      const dez = doRec(aluguelRec.id).find(l => l.dataCompetencia === '2026-12-05');
+      await App.lancamentos.editarMovimento(dez.id, { ...aluguel, dataCompetencia: '2026-12-05', dataVencimento: '2026-12-10', valor: 160000, observacao: '' });
+      igual('RF-15: ocorrência editada fica marcada como personalizada', App.lancamentos.obter(dez.id).origem.personalizada, true);
+      igual('RF-15: o modelo não muda quando só uma ocorrência é editada', [aluguelRec.modelo.valor, App.lancamentos.obter(dez.id).valor], [150000, 160000]);
+      const nov = doRec(aluguelRec.id)[0];
+      await App.lancamentos.efetivar(nov.id, '2026-11-10');
+      igual('RF-15: marcar como pago não conta como edição do modelo', App.lancamentos.obter(nov.id).origem.personalizada, undefined);
+
+      // RF-15: editar o modelo vale só para as ocorrências futuras
+      const base2 = { descricao: 'Aluguel apto', valor: 155000, categoriaId: catM.id, contaId: cP.id, dataFim: '', aplicarPendentes: true };
+      const e1 = await rec.editar(aluguelRec.id, base2, '2026-12-20');
+      const porData = (d) => doRec(aluguelRec.id).find(l => l.dataCompetencia === d);
+      igual('RF-15: pendentes futuras recebem o novo valor e descrição', [porData('2027-01-05').valor, porData('2027-02-05').valor, porData('2027-02-05').descricao, e1.atualizadas > 0], [155000, 155000, 'Aluguel apto', true]);
+      igual('RF-15: ocorrência paga não muda', [porData('2026-11-05').valor, porData('2026-11-05').descricao], [150000, 'Aluguel']);
+      igual('RF-15: ocorrência editada individualmente não muda', porData('2026-12-05').valor, 160000);
+      igual('RF-15: o modelo guarda os novos dados', [aluguelRec.modelo.valor, aluguelRec.modelo.descricao], [155000, 'Aluguel apto']);
+      igual('RF-15: novas ocorrências usam o modelo novo', (await rec.gerarPendentes('2027-05-20'), porData('2027-05-05') ? porData('2027-05-05').valor : null), 155000);
+      const e2 = await rec.editar(aluguelRec.id, { ...base2, valor: 170000, aplicarPendentes: false }, '2026-12-20');
+      igual('RF-15: sem marcar a opção, só as geradas daqui em diante mudam', [e2.atualizadas, porData('2027-02-05').valor], [0, 155000]);
+      await rec.editar(aluguelRec.id, { ...base2, valor: 155000, aplicarPendentes: false }, '2026-12-20');
+      await erro('RF-15: editar com categoria de receita numa despesa', () => rec.editar(aluguelRec.id, { ...base2, categoriaId: catS.id }, HOJE), 'não é de despesa');
+      await erro('RF-15: editar com data final anterior ao início', () => rec.editar(aluguelRec.id, { ...base2, dataFim: '2020-01-01' }, HOJE), 'não pode ser anterior');
+      await erro('recorrência: editar inexistente', () => rec.editar('rec_nada', base2, HOJE), 'não encontrada');
+      await rec.editar(aluguelRec.id, { ...base2, dataFim: '2027-08-31' }, HOJE);
+      igual('RF-15: data final do modelo é gravada', aluguelRec.dataFim, '2027-08-31');
+      await rec.gerarPendentes('2028-01-10');
+      igual('RF-15: com data final no modelo, nada passa dela', doRec(aluguelRec.id).filter(l => l.dataCompetencia > '2027-08-31').length, 0);
+      await rec.editar(aluguelRec.id, { ...base2, dataFim: '' }, HOJE);
+      igual('RF-15: data final pode ser retirada', aluguelRec.dataFim, null);
+
+      // Pausar, retomar e conta inativa
+      await rec.criarDoFormulario('despesa', { ...aluguel, descricao: 'Assinatura', valor: 3990, dataCompetencia: '2026-11-15', dataVencimento: '' }, { periodicidade: 'mensal' }, HOJE);
+      const assRec = rec.listar().find(r => r.modelo.descricao === 'Assinatura');
+      await rec.definirAtiva(assRec.id, false, HOJE);
+      igual('pausar: recorrência pausada não gera', [(await rec.gerarPendentes('2027-03-10')).geradas, doRec(assRec.id).map(l => l.dataCompetencia)], [0, ['2026-11-15', '2026-12-15']]);
+      const rr = await rec.definirAtiva(assRec.id, true, '2027-03-10');
+      igual('retomar: não gera o que ficou no passado durante a pausa', doRec(assRec.id).map(l => l.dataCompetencia), ['2026-11-15', '2026-12-15', '2027-03-15', '2027-04-15']);
+      igual('retomar: informa quantas gerou', rr.geradas, 2);
+      await App.contas.definirAtiva(cP.id, false);
+      const pulo = await rec.gerarPendentes('2028-06-10');
+      igual('conta inativa: nada é gerado e as recorrências ativas são contadas como puladas', [pulo.geradas, pulo.puladas], [0, 3]);
+      await App.contas.definirAtiva(cP.id, true);
+
+      // Excluir recorrência
+      const apagar = await rec.excluir(assRec.id, { apagarPendentesFuturas: true }, '2027-03-10');
+      igual('excluir com apagar pendentes: remove as de hoje em diante', [apagar.apagadas, D_registros('lancamentos').filter(l => l.descricao === 'Assinatura').map(l => l.dataCompetencia)], [2, ['2026-11-15', '2026-12-15']]);
+      igual('excluir: as que ficam perdem o vínculo', D_registros('lancamentos').filter(l => l.descricao === 'Assinatura').map(l => [l.recorrenciaId, l.origem]), [[null, null], [null, null]]);
+      igual('excluir: o modelo some', rec.obter(assRec.id), undefined);
+      const totalFreela = doRec(freelaRec.id).length;
+      const manter = await rec.excluir(freelaRec.id, { apagarPendentesFuturas: false }, HOJE);
+      igual('excluir sem apagar pendentes: tudo continua, sem vínculo', [manter.apagadas, D_registros('lancamentos').filter(l => l.descricao === 'Freela').length, doRec(freelaRec.id).length], [0, totalFreela, 0]);
+      await erro('contas: não exclui conta usada por recorrência ativa', () => App.contas.excluir(cP.id), 'Inative');
+
+      // ---------- Cartões: em que fatura cai cada compra (RF-18, regra 6.3) ----------
+      const CC = App.calc.cartoes;
+      const nubank = { diaFechamento: 3, diaVencimento: 10, compraNoDiaFechamento: 'proxima' };
+      igual('fatura: compra depois do fechamento vai para a fatura do mês seguinte (exemplo da especificação)', CC.mesDaFatura(nubank, '2026-11-05'), '2026-12');
+      igual('fatura: compra no dia do fechamento segue o padrão (fatura seguinte)', CC.mesDaFatura(nubank, '2026-11-03'), '2026-12');
+      igual('fatura: compra no dia do fechamento com a opção "atual"', CC.mesDaFatura({ ...nubank, compraNoDiaFechamento: 'atual' }, '2026-11-03'), '2026-11');
+      igual('fatura: compra antes do fechamento fica na fatura do mesmo mês', CC.mesDaFatura(nubank, '2026-11-02'), '2026-11');
+      igual('fatura: compra no fim do ano', CC.mesDaFatura(nubank, '2026-12-31'), '2027-01');
+      const fecha25 = { diaFechamento: 25, diaVencimento: 5, compraNoDiaFechamento: 'proxima' };
+      igual('fatura: vencimento antes do fechamento no calendário vence no mês seguinte', CC.mesDaFatura(fecha25, '2026-11-10'), '2026-12');
+      igual('fatura: compra depois do fechamento 25 vence dois meses depois', CC.mesDaFatura(fecha25, '2026-11-26'), '2027-01');
+      const fecha31 = { diaFechamento: 31, diaVencimento: 10, compraNoDiaFechamento: 'proxima' };
+      igual('fatura: fechamento dia 31 em fevereiro usa o último dia (28)', CC.mesDaFatura(fecha31, '2026-02-28'), '2026-04');
+      igual('fatura: um dia antes do fechamento de fevereiro', CC.mesDaFatura(fecha31, '2026-02-27'), '2026-03');
+      igual('datas da fatura: fecha e vence no mesmo mês', CC.datasDaFatura(nubank, '2026-12'), { dataFechamento: '2026-12-03', dataVencimento: '2026-12-10' });
+      igual('datas da fatura: fecha no mês anterior ao vencimento', CC.datasDaFatura(fecha25, '2026-12'), { dataFechamento: '2026-11-25', dataVencimento: '2026-12-05' });
+      igual('datas da fatura: dia 31 vira o último dia do mês', CC.datasDaFatura(fecha31, '2026-03'), { dataFechamento: '2026-02-28', dataVencimento: '2026-03-10' });
+      igual('parcelas: divisão exata', CC.dividirParcelas(12000, 3), [4000, 4000, 4000]);
+      igual('parcelas: a diferença de centavos fica na primeira', CC.dividirParcelas(10000, 3), [3334, 3333, 3333]);
+      igual('parcelas: R$ 1,00 em 3 vezes', CC.dividirParcelas(100, 3), [34, 33, 33]);
+      igual('parcelas: à vista', CC.dividirParcelas(9990, 1), [9990]);
+      igual('parcelas: a soma sempre fecha com o total', CC.dividirParcelas(99999, 7).reduce((a, b) => a + b, 0), 99999);
+      igual('parcelas: uma fatura por mês', CC.mesesDasParcelas(nubank, '2026-11-05', 3), ['2026-12', '2027-01', '2027-02']);
+
+      // ---------- Cartões: cadastro (RF-16) ----------
+      zerarDados();
+      await App.contas.criar({ ...base, nome: 'Principal' });
+      const contaP = App.contas.listar()[0];
+      await App.categorias.criar({ nome: 'Eletrônicos', natureza: 'despesa', cor: '#1d4ed8' });
+      await App.categorias.criar({ nome: 'Salário', natureza: 'receita', cor: '#15803d' });
+      const catEle = App.categorias.listar('despesa')[0];
+      const catRecC = App.categorias.listar('receita')[0];
+      const NU = { nome: 'Nubank', instituicao: 'Nubank', limite: 800000, diaFechamento: 3, diaVencimento: 10, compraNoDiaFechamento: 'proxima' };
+      await App.cartoes.criar(NU);
+      const nu = App.cartoes.listar()[0];
+      igual('cartão: criado ativo, com id car_ e modo padrão', [nu.ativo, /^car_[0-9a-f]{12}$/.test(nu.id), nu.compraNoDiaFechamento], [true, true, 'proxima']);
+      await erro('cartão: nome repetido', () => App.cartoes.criar({ ...NU, nome: 'nubank' }), 'Já existe');
+      await erro('cartão: dia de fechamento 32', () => App.cartoes.criar({ ...NU, nome: 'X', diaFechamento: 32 }), 'fechamento');
+      await erro('cartão: dia de vencimento vazio', () => App.cartoes.criar({ ...NU, nome: 'X', diaVencimento: '' }), 'vencimento');
+      await erro('cartão: limite zero', () => App.cartoes.criar({ ...NU, nome: 'X', limite: 0 }), 'limite');
+      await erro('cartão: modo de fechamento inválido', () => App.cartoes.criar({ ...NU, nome: 'X', compraNoDiaFechamento: 'z' }), 'dia do fechamento');
+      await erro('cartão: nome em branco', () => App.cartoes.criar({ ...NU, nome: ' ' }), 'nome');
+      igual('cartão: recusados não foram cadastrados', App.cartoes.listar().length, 1);
+
+      // ---------- Cartões: faturas geradas (RF-19) ----------
+      const HC = '2026-11-10';
+      const gf = await App.faturas.gerarFaturas(HC);
+      igual('faturas: gera a fatura atual e a seguinte de cada cartão ativo', [gf.criadas, D_registros('faturas').map(f => f.mes)], [2, ['2026-12', '2027-01']]);
+      igual('faturas: id deriva do cartão e do mês', D_registros('faturas')[0].id, 'fat_' + nu.id.replace('car_', '') + '_2026-12');
+      igual('faturas: gerar de novo não cria nada', (await App.faturas.gerarFaturas(HC)).criadas, 0);
+      igual('faturas: nascem abertas, vazias e com as datas do cartão', (({ situacao, ajustes, encargos, pagamentoIds, dataFechamento, dataVencimento }) => [situacao, ajustes, encargos, pagamentoIds, dataFechamento, dataVencimento])(D_registros('faturas')[0]), ['aberta', [], [], [], '2026-12-03', '2026-12-10']);
+
+      // ---------- Cartões: compras e parcelas (RF-17, RF-18) ----------
+      const GEL = { cartaoId: nu.id, descricao: 'Geladeira', valorTotal: 120000, parcelas: 6, dataCompra: '2026-11-05', categoriaId: catEle.id, observacao: '' };
+      const antesPrevia = D_registros('faturas').length;
+      const previa = App.compras.prever(GEL);
+      igual('compra: prévia mostra as parcelas por fatura sem gravar nada', [previa.parcelas.map(p => [p.numero, p.valor, p.mesFatura, p.dataVencimento]).slice(0, 2), D_registros('faturas').length, D_registros('compras_cartao').length],
+        [[[1, 20000, '2026-12', '2026-12-10'], [2, 20000, '2027-01', '2027-01-10']], antesPrevia, 0]);
+      await App.compras.criar(GEL, HC);
+      const gel = App.compras.listar()[0];
+      igual('compra: 6 parcelas de R$ 200 nas faturas de dez/2026 a mai/2027', gel.parcelas.map(p => [p.valor, p.mesFatura]), [[20000, '2026-12'], [20000, '2027-01'], [20000, '2027-02'], [20000, '2027-03'], [20000, '2027-04'], [20000, '2027-05']]);
+      igual('compra: criou as faturas que faltavam', D_registros('faturas').map(f => f.mes), ['2026-12', '2027-01', '2027-02', '2027-03', '2027-04', '2027-05']);
+      igual('compra: nasce ativa, com parcelas ativas e sem estornos', [gel.situacao, gel.parcelas.every(p => p.situacao === 'ativa'), gel.estornos], ['ativa', true, []]);
+      let rs = App.faturas.resumoDoCartao(nu, HC);
+      igual('limite (RF-24): total, utilizado e disponível', [rs.limite, rs.utilizado, rs.disponivel], [800000, 120000, 680000]);
+      igual('limite: fatura atual e parcelas futuras (RF-25)', [rs.mesAtual, rs.aPagar, rs.saldoFuturas, rs.parcelasFuturas.length, rs.totalComprometido], ['2026-12', 20000, 100000, 5, 100000]);
+      igual('parcelas futuras: em ordem de fatura', rs.parcelasFuturas.map(p => p.mes), ['2027-01', '2027-02', '2027-03', '2027-04', '2027-05']);
+
+      const FONE = { cartaoId: nu.id, descricao: 'Fone', valorTotal: 10000, parcelas: 3, dataCompra: '2026-11-02', categoriaId: catEle.id, observacao: '' };
+      await App.compras.criar(FONE, HC);
+      const fone = App.compras.listar().find(c => c.descricao === 'Fone');
+      igual('compra: divisão inexata deixa a diferença na primeira parcela', fone.parcelas.map(p => [p.valor, p.mesFatura]), [[3334, '2026-11'], [3333, '2026-12'], [3333, '2027-01']]);
+      const idFat = (mes) => App.faturas.idDaFatura(nu, mes);
+      const infoF = (mes) => App.faturas.info(App.faturas.obter(idFat(mes)), HC);
+      igual('fatura: total = parcelas do mês (dez: geladeira + fone)', [infoF('2026-12').parcelas, infoF('2026-12').total], [23333, 23333]);
+      igual('fatura: antes do dia de fechamento é aberta, depois é fechada', [infoF('2026-12').situacao, infoF('2026-11').situacao], ['aberta', 'fechada']);
+      igual('limite: soma de todas as parcelas ainda não pagas', App.faturas.resumoDoCartao(nu, HC).utilizado, 130000);
+
+      await erro('compra: descrição em branco', () => App.compras.criar({ ...GEL, descricao: '' }, HC), 'descrição');
+      await erro('compra: valor zero', () => App.compras.criar({ ...GEL, valorTotal: 0 }, HC), 'valor total');
+      await erro('compra: parcelas zero', () => App.compras.criar({ ...GEL, parcelas: 0 }, HC), 'parcelas');
+      await erro('compra: parcelas demais', () => App.compras.criar({ ...GEL, parcelas: 61 }, HC), 'parcelas');
+      await erro('compra: parcelas vazias', () => App.compras.criar({ ...GEL, parcelas: '' }, HC), 'parcelas');
+      await erro('compra: cartão inexistente', () => App.compras.criar({ ...GEL, cartaoId: 'car_x' }, HC), 'cartão');
+      await erro('compra: data inválida', () => App.compras.criar({ ...GEL, dataCompra: '2026-02-30' }, HC), 'data');
+      await erro('compra: categoria de receita não vale', () => App.compras.criar({ ...GEL, categoriaId: catRecC.id }, HC), 'não é de despesa');
+      igual('compra: recusadas não foram gravadas', D_registros('compras_cartao').length, 2);
+
+      // ---------- Cartões: ajustes e encargos (RF-20, RF-22) ----------
+      const fatDez = idFat('2026-12');
+      await App.faturas.adicionarAjuste(fatDez, { descricao: 'Anuidade', valor: 2990 }, HC);
+      await App.faturas.adicionarAjuste(fatDez, { descricao: 'Desconto', valor: -1000 }, HC);
+      igual('ajustes: somam no total da fatura (cobrança e crédito)', infoF('2026-12').total, 23333 + 2990 - 1000);
+      await erro('ajuste: valor zero', () => App.faturas.adicionarAjuste(fatDez, { descricao: 'X', valor: 0 }, HC), 'diferente de zero');
+      await erro('ajuste: sem descrição', () => App.faturas.adicionarAjuste(fatDez, { descricao: '', valor: 100 }, HC), 'descrição');
+      await erro('ajuste: fatura inexistente', () => App.faturas.adicionarAjuste('fat_x', { descricao: 'X', valor: 100 }, HC), 'não encontrada');
+      const ajusteDesconto = App.faturas.obter(fatDez).ajustes[1];
+      await App.faturas.removerAjuste(fatDez, ajusteDesconto.id, HC);
+      igual('ajustes: remover tira do total', infoF('2026-12').total, 23333 + 2990);
+
+      const fatNov = idFat('2026-11');
+      await App.faturas.adicionarEncargo(fatNov, { tipo: 'juros', valor: 1520, descricao: 'Juros rotativo' }, HC);
+      const catEnc = App.categorias.listar('despesa').find(c => c.nome === 'Encargos de cartão');
+      igual('encargo: cria a categoria "Encargos de cartão" quando não existe e usa nela', [!!catEnc, App.faturas.obter(fatNov).encargos[0].categoriaId === catEnc.id], [true, true]);
+      igual('encargo: entra no total da fatura', infoF('2026-11').total, 3334 + 1520);
+      await erro('encargo: tipo inválido', () => App.faturas.adicionarEncargo(fatNov, { tipo: 'x', valor: 100 }, HC), 'tipo');
+      await erro('encargo: valor zero', () => App.faturas.adicionarEncargo(fatNov, { tipo: 'multa', valor: 0 }, HC), 'maior que zero');
+      igual('encargo: sem descrição usa o nome do tipo', (await App.faturas.adicionarEncargo(fatNov, { tipo: 'multa', valor: 200 }, HC), App.faturas.obter(fatNov).encargos[1].descricao), 'Multa');
+      await App.faturas.removerEncargo(fatNov, App.faturas.obter(fatNov).encargos[1].id, HC);
+      igual('encargo: remover tira do total', infoF('2026-11').total, 3334 + 1520);
+      await erro('categoria do sistema: não exclui "Encargos de cartão"', () => App.categorias.excluir(catEnc.id), 'usada pelo programa');
+      await erro('categoria do sistema: não renomeia', () => App.categorias.editar(catEnc.id, { nome: 'Outro', natureza: 'despesa', cor: '#b91c1c' }), 'usada pelo programa');
+      await App.categorias.editar(catEnc.id, { nome: 'Encargos de cartão', natureza: 'despesa', cor: '#111111' });
+      igual('categoria do sistema: a cor pode mudar', App.categorias.obter(catEnc.id).cor, '#111111');
+      igual('categoria do sistema: garantir não duplica', App.categorias.garantirDoSistema('Encargos de cartão').criada, false);
+
+      // ---------- Cartões: pagamento integral e parcial (RF-21) ----------
+      const saldoAntesCartao = App.contas.saldos()[contaP.id];
+      await App.faturas.pagar(fatNov, { contaId: contaP.id, valor: 2000, data: HC }, HC);
+      igual('pagamento parcial: fatura fica "paga parcialmente" com o saldo restante', [infoF('2026-11').situacao, infoF('2026-11').pago, infoF('2026-11').saldo], ['paga_parcial', 2000, 2854]);
+      igual('pagamento: reduz o saldo da conta, mas não é despesa', [App.contas.saldos()[contaP.id], saldoAntesCartao - 2000, App.lancamentos.listarMovimentos('despesa').length], [saldoAntesCartao - 2000, saldoAntesCartao - 2000, 0]);
+      igual('pagamento: lançamento pagamento_fatura aponta para a fatura', (({ tipo, situacao, categoriaId, origem }) => [tipo, situacao, categoriaId, origem])(App.lancamentos.obter(App.faturas.obter(fatNov).pagamentoIds[0])), ['pagamento_fatura', 'pago', null, { faturaId: fatNov }]);
+      igual('pagamento: a situação gravada na fatura acompanha', App.faturas.obter(fatNov).situacao, 'paga_parcial');
+      igual('limite: pagamento libera limite', App.faturas.resumoDoCartao(nu, HC).utilizado, 120000 + 10000 + 2990 + 1520 - 2000);
+      await erro('pagamento: valor maior que o saldo', () => App.faturas.pagar(fatNov, { contaId: contaP.id, valor: 2855, data: HC }, HC), 'maior que o saldo');
+      await erro('pagamento: valor zero', () => App.faturas.pagar(fatNov, { contaId: contaP.id, valor: 0, data: HC }, HC), 'maior que zero');
+      await erro('pagamento: conta inexistente', () => App.faturas.pagar(fatNov, { contaId: 'acc_x', valor: 100, data: HC }, HC), 'conta');
+      await erro('pagamento: data inválida', () => App.faturas.pagar(fatNov, { contaId: contaP.id, valor: 100, data: '' }, HC), 'data');
+      await erro('fatura com pagamento: não aceita ajuste (RF-20)', () => App.faturas.adicionarAjuste(fatNov, { descricao: 'X', valor: 100 }, HC), 'já tem pagamento');
+      await erro('fatura com pagamento: não aceita compra nova', () => App.compras.criar({ ...FONE, descricao: 'Outro' }, HC), 'já tem pagamento');
+      await erro('fatura com pagamento: não permite excluir compra com parcela nela', () => App.compras.excluir(fone.id, HC), 'já tem pagamento');
+      await App.faturas.pagar(fatNov, { contaId: contaP.id, valor: 2854, data: HC }, HC);
+      igual('pagamento integral: fatura paga, saldo zero', [infoF('2026-11').situacao, infoF('2026-11').saldo], ['paga', 0]);
+      await erro('pagamento: fatura já paga', () => App.faturas.pagar(fatNov, { contaId: contaP.id, valor: 100, data: HC }, HC), 'não tem saldo');
+      await erro('encargo: fatura já paga recusa', () => App.faturas.adicionarEncargo(fatNov, { tipo: 'juros', valor: 100 }, HC), 'já está paga');
+      await App.faturas.desfazerPagamento(fatNov, App.faturas.obter(fatNov).pagamentoIds[1], HC);
+      igual('desfazer pagamento: a fatura volta a ficar paga parcialmente e o dinheiro volta', [infoF('2026-11').situacao, App.contas.saldos()[contaP.id]], ['paga_parcial', saldoAntesCartao - 2000]);
+      await erro('desfazer pagamento: id desconhecido', () => App.faturas.desfazerPagamento(fatNov, 'lan_x', HC), 'não encontrado');
+
+      // ---------- Cartões: mover parcela (RF-20) ----------
+      await App.compras.moverParcela(gel.id, 3, '2027-03', HC);
+      igual('mover parcela: muda de fatura e guarda a original', [gel.parcelas[2].mesFatura, gel.parcelas[2].mesFaturaOriginal], ['2027-03', '2027-02']);
+      igual('mover parcela: ajusta o total das duas faturas', [infoF('2027-02').parcelas, infoF('2027-03').parcelas], [0, 40000]);
+      igual('mover parcela: o limite utilizado não muda', App.faturas.resumoDoCartao(nu, HC).utilizado, 120000 + 10000 + 2990 + 1520 - 2000);
+      await erro('mover parcela: para a mesma fatura', () => App.compras.moverParcela(gel.id, 3, '2027-03', HC), 'já está nessa fatura');
+      await erro('mover parcela: mês inválido', () => App.compras.moverParcela(gel.id, 3, 'abc', HC), 'destino');
+      await erro('mover parcela: número inexistente', () => App.compras.moverParcela(gel.id, 9, '2027-06', HC), 'não encontrada');
+      await erro('mover parcela: a partir de fatura com pagamento', () => App.compras.moverParcela(fone.id, 1, '2026-12', HC), 'já tem pagamento');
+      await erro('mover parcela: para fatura com pagamento', () => App.compras.moverParcela(gel.id, 1, '2026-11', HC), 'já tem pagamento');
+
+      // ---------- Cartões: estornos e cancelamento (RF-23) ----------
+      await App.compras.estornarParcial(gel.id, { valor: 5000, mesCredito: '2026-12' }, HC);
+      igual('estorno parcial: crédito na fatura escolhida e registro na compra', [App.faturas.obter(fatDez).ajustes.map(a => [a.valor, a.tipo]), gel.estornos.length, infoF('2026-12').total], [[[2990, 'manual'], [-5000, 'estorno_parcial']], 1, 23333 + 2990 - 5000]);
+      igual('estorno parcial: as parcelas da compra não mudam', gel.parcelas.every(p => p.situacao === 'ativa') && gel.situacao === 'ativa', true);
+      await erro('estorno parcial: passa do que resta', () => App.compras.estornarParcial(gel.id, { valor: 115001, mesCredito: '2026-12' }, HC), 'passa do que resta');
+      await erro('estorno parcial: valor zero', () => App.compras.estornarParcial(gel.id, { valor: 0, mesCredito: '2026-12' }, HC), 'maior que zero');
+      await erro('estorno parcial: fatura com pagamento não recebe o crédito', () => App.compras.estornarParcial(gel.id, { valor: 100, mesCredito: '2026-11' }, HC), 'já tem pagamento');
+      const ajParcial = App.faturas.obter(fatDez).ajustes.find(a => a.tipo === 'estorno_parcial');
+      await App.faturas.removerAjuste(fatDez, ajParcial.id, HC);
+      igual('estorno parcial: remover o crédito também tira o registro da compra', [gel.estornos.length, infoF('2026-12').total], [0, 23333 + 2990]);
+      await App.compras.estornarParcial(gel.id, { valor: 5000, mesCredito: '2026-12' }, HC);
+
+      await erro('cancelar: compra com parcela já cobrada', () => App.compras.cancelar(fone.id, HC), 'já cobradas');
+      await App.compras.criar({ ...GEL, descricao: 'Livro', valorTotal: 3000, parcelas: 1, dataCompra: HC }, HC);
+      const livro = App.compras.listar().find(c => c.descricao === 'Livro');
+      const totalAntes = infoF('2026-12').total;
+      await App.compras.cancelar(livro.id, HC);
+      igual('cancelar: parcelas deixam de contar na fatura', [livro.situacao, livro.parcelas[0].situacao, infoF('2026-12').total], ['cancelada', 'cancelada', totalAntes - 3000]);
+      await erro('cancelar: compra já cancelada', () => App.compras.cancelar(livro.id, HC), 'já está');
+      await App.compras.excluir(livro.id, HC);
+      igual('excluir: compra cancelada pode ser excluída', App.compras.obter(livro.id), undefined);
+
+      // Estorno total da geladeira, que tinha um estorno parcial de R$ 50 já lançado em dezembro:
+      // todas as parcelas estão em faturas abertas, então são canceladas; o crédito de R$ 50 passaria
+      // do que foi cobrado (nada), e o excesso é revertido para não sobrar crédito a mais.
+      const dezAntes = infoF('2026-12').total;
+      await App.compras.estornarTotal(gel.id, { mesCredito: '2026-12' }, HC);
+      igual('estorno total: compra estornada e todas as parcelas canceladas', [gel.situacao, gel.parcelas.map(p => p.situacao)], ['estornada', ['cancelada', 'cancelada', 'cancelada', 'cancelada', 'cancelada', 'cancelada']]);
+      igual('estorno total: o crédito parcial anterior não sobra em dobro (excesso revertido)', infoF('2026-12').total, dezAntes - 20000 + 5000);
+      igual('estorno total: o limite utilizado cai', App.faturas.resumoDoCartao(nu, HC).utilizado, 10000 + 2990 + 1520 - 2000 + 0);
+      await erro('estorno: compra já estornada', () => App.compras.estornarTotal(gel.id, {}, HC), 'já está');
+      await erro('excluir: compra com estorno não pode ser excluída', () => App.compras.excluir(gel.id, HC), 'estorno');
+
+      // Estorno total de compra já cobrada: o que foi cobrado vira crédito na fatura escolhida.
+      await App.compras.estornarTotal(fone.id, { mesCredito: '2026-12' }, HC);
+      igual('estorno total: parcelas de fatura aberta são canceladas e a já cobrada fica', fone.parcelas.map(p => p.situacao), ['ativa', 'cancelada', 'cancelada']);
+      igual('estorno total: valor já cobrado vira crédito na fatura escolhida', App.faturas.obter(fatDez).ajustes.filter(a => a.compraId === fone.id).map(a => [a.valor, a.tipo]), [[-3334, 'estorno_total']]);
+      await erro('ajuste: crédito de estorno total não pode ser removido', () => App.faturas.removerAjuste(fatDez, App.faturas.obter(fatDez).ajustes.find(a => a.compraId === fone.id).id, HC), 'estorno total');
+
+      // ---------- Cartões: edição, inativação e exclusão ----------
+      await App.compras.editar(fone.id, { descricao: 'Fone bluetooth', categoriaId: catEle.id, observacao: 'garantia' });
+      igual('compra: editar muda só descrição, categoria e observação', [fone.descricao, fone.observacao, fone.valorTotal], ['Fone bluetooth', 'garantia', 10000]);
+      await erro('compra: editar com categoria de receita', () => App.compras.editar(fone.id, { descricao: 'X', categoriaId: catRecC.id, observacao: '' }), 'não é de despesa');
+      await App.cartoes.editar(nu.id, { ...NU, diaFechamento: 5 });
+      igual('cartão: mudar o fechamento ajusta faturas sem pagamento e preserva as pagas', [App.faturas.obter(fatDez).dataFechamento, App.faturas.obter(fatNov).dataFechamento], ['2026-12-05', '2026-11-03']);
+      await erro('cartão: não exclui cartão com compras', () => App.cartoes.excluir(nu.id), 'Inative');
+      await App.cartoes.definirAtivo(nu.id, false);
+      await erro('compra: cartão inativo não recebe compras', () => App.compras.criar(GEL, HC), 'inativo');
+      igual('faturas: cartão inativo não ganha faturas novas', (await App.faturas.gerarFaturas('2030-01-10')).criadas, 0);
+      await App.cartoes.definirAtivo(nu.id, true);
+      await App.cartoes.criar({ ...NU, nome: 'Mercado Pago', instituicao: 'Mercado Pago' });
+      const mp = App.cartoes.listar().find(c => c.nome === 'Mercado Pago');
+      await App.cartoes.excluir(mp.id);
+      igual('cartão: exclui cartão sem compras', App.cartoes.listar().length, 1);
+
+      // A situação gravada nas faturas acompanha o calendário.
+      await App.faturas.gerarFaturas('2026-12-20');
+      igual('faturas: depois do fechamento a situação gravada vira "fechada"', App.faturas.obter(fatDez).situacao, 'fechada');
+
+      // ---------- Investimentos: rentabilidade (RF-30, RF-31; regra 6.4) ----------
+      {
+        const CI = App.calc.investimentos;
+        const inv0 = (extra) => ({ classe: 'renda_fixa', movimentacoes: [], atualizacoes: [], ...extra });
+        const mv = (tipo, data, valor) => ({ tipo, data, valor });
+        const campos = (r) => [r.aportado, r.resgatado, r.rendimentos, r.taxas, r.valorAtual, r.rentabilidade, r.rentabilidadePct, r.valorAtualEstimado];
+
+        igual('rentabilidade: exemplo da especificação (aporte 5.000, rendimento 32, valor atual 5.234)',
+          campos(CI.resumoDoInvestimento(inv0({ movimentacoes: [mv('aporte', '2026-06-01', 500000), mv('rendimento', '2026-10-15', 3200)], atualizacoes: [{ data: '2026-10-31', valorAtual: 523400 }] }))),
+          [500000, 0, 3200, 0, 523400, 26600, 0.0532, false]);
+        igual('rentabilidade: taxa cobrada à parte reduz a rentabilidade',
+          campos(CI.resumoDoInvestimento(inv0({ movimentacoes: [mv('aporte', '2026-06-01', 100000), mv('taxa', '2026-07-01', 500)], atualizacoes: [{ data: '2026-07-31', valorAtual: 100000 }] }))),
+          [100000, 0, 0, 500, 100000, -500, -0.005, false]);
+        igual('rentabilidade: resgate entra na conta',
+          campos(CI.resumoDoInvestimento(inv0({ movimentacoes: [mv('aporte', '2026-06-01', 100000), mv('resgate', '2026-08-01', 30000)], atualizacoes: [{ data: '2026-08-31', valorAtual: 80000 }] }))),
+          [100000, 30000, 0, 0, 80000, 10000, 0.1, false]);
+        igual('valor atual: sem atualização usa o aportado líquido, sem inventar ganho',
+          campos(CI.resumoDoInvestimento(inv0({ movimentacoes: [mv('aporte', '2026-06-01', 100000)] }))),
+          [100000, 0, 0, 0, 100000, 0, 0, true]);
+        igual('valor atual: sem atualização, rendimento recebido é o único ganho',
+          CI.resumoDoInvestimento(inv0({ movimentacoes: [mv('aporte', '2026-06-01', 100000), mv('rendimento', '2026-07-01', 500)] })).rentabilidade, 500);
+        igual('valor atual: resgate maior que o aporte não deixa valor negativo',
+          campos(CI.resumoDoInvestimento(inv0({ movimentacoes: [mv('aporte', '2026-06-01', 100000), mv('resgate', '2026-08-01', 110000)] }))),
+          [100000, 110000, 0, 0, 0, 10000, 0.1, true]);
+        igual('rentabilidade %: sem aporte não há percentual', CI.resumoDoInvestimento(inv0({ atualizacoes: [{ data: '2026-01-01', valorAtual: 5000 }] })).rentabilidadePct, null);
+        const comHistorico = inv0({
+          movimentacoes: [mv('aporte', '2026-06-01', 100000)],
+          atualizacoes: [{ data: '2026-06-30', valorAtual: 101000 }, { data: '2026-09-30', valorAtual: 105000 }],
+        });
+        igual('valor atual: usa a atualização mais recente', CI.resumoDoInvestimento(comHistorico).valorAtual, 105000);
+        igual('valor em uma data: entre duas atualizações', CI.resumoDoInvestimento(comHistorico, '2026-07-15').valorAtual, 101000);
+        igual('valor em uma data: antes de qualquer atualização é estimado', [CI.resumoDoInvestimento(comHistorico, '2026-06-15').valorAtual, CI.resumoDoInvestimento(comHistorico, '2026-06-15').valorAtualEstimado], [100000, true]);
+        igual('valor em uma data: antes do primeiro aporte não há nada', [CI.resumoDoInvestimento(comHistorico, '2026-05-31').aportado, CI.resumoDoInvestimento(comHistorico, '2026-05-31').valorAtual], [0, 0]);
+        igual('valor atual: na mesma data vale a última gravada', CI.ultimaAtualizacao(inv0({ atualizacoes: [{ data: '2026-01-01', valorAtual: 1 }, { data: '2026-01-01', valorAtual: 2 }] })).valorAtual, 2);
+        const carteira = CI.resumoDaCarteira([
+          inv0({ classe: 'renda_fixa', movimentacoes: [mv('aporte', '2026-06-01', 100000)], atualizacoes: [{ data: '2026-06-30', valorAtual: 110000 }] }),
+          inv0({ classe: 'fii', movimentacoes: [mv('aporte', '2026-06-01', 50000), mv('rendimento', '2026-07-01', 400)], atualizacoes: [{ data: '2026-06-30', valorAtual: 49000 }] }),
+          inv0({ classe: 'renda_fixa', movimentacoes: [mv('aporte', '2026-06-01', 50000), mv('resgate', '2026-07-01', 52000)], atualizacoes: [{ data: '2026-07-01', valorAtual: 0 }] }),
+        ]);
+        igual('carteira: totais somam os investimentos', [carteira.aportado, carteira.resgatado, carteira.rendimentos, carteira.valorAtual, carteira.rentabilidade], [200000, 52000, 400, 159000, 11400]);
+        igual('carteira: percentual sobre o total aportado', carteira.rentabilidadePct, 11400 / 200000);
+        igual('carteira: distribuição por classe, sem classes zeradas', carteira.porClasse.map(c => [c.classe, c.valorAtual]), [['renda_fixa', 110000], ['fii', 49000]]);
+        igual('percentual: formatação em português', [U.formatarPercentual(0.0532), U.formatarPercentual(-0.005), U.formatarPercentual(null)], ['5,32%', '-0,50%', '—']);
+      }
+
+      // ---------- Investimentos: cadastro e movimentações (RF-26 a RF-30) ----------
+      {
+        zerarDados();
+        await App.contas.criar({ ...base, nome: 'Principal' });
+        const conta = App.contas.listar()[0];
+        const saldo = () => App.contas.saldos()[conta.id];
+        const AI = App.investimentos;
+        const CDB = { nome: 'CDB Banco Inter 110% CDI', classe: 'renda_fixa', instituicao: 'Banco Inter', quantidade: '' };
+        await AI.criar(CDB);
+        const cdb = AI.listar()[0];
+        igual('investimento: nasce ativo, sem movimentações nem atualizações, com id inv_', [cdb.ativo, cdb.movimentacoes, cdb.atualizacoes, cdb.quantidade, /^inv_[0-9a-f]{12}$/.test(cdb.id)], [true, [], [], null, true]);
+        await erro('investimento: nome repetido', () => AI.criar({ ...CDB, nome: 'cdb banco inter 110% cdi' }), 'Já existe');
+        await erro('investimento: nome em branco', () => AI.criar({ ...CDB, nome: ' ' }), 'nome');
+        await erro('investimento: classe inválida', () => AI.criar({ ...CDB, nome: 'X', classe: 'z' }), 'classe');
+        await erro('investimento: instituição em branco', () => AI.criar({ ...CDB, nome: 'X', instituicao: '' }), 'instituição');
+        await erro('investimento: quantidade negativa', () => AI.criar({ ...CDB, nome: 'X', quantidade: -1 }), 'quantidade');
+        await erro('investimento: quantidade não numérica', () => AI.criar({ ...CDB, nome: 'X', quantidade: 'abc' }), 'quantidade');
+        await AI.criar({ nome: 'BTC', classe: 'cripto', instituicao: 'Corretora', quantidade: 0.00215 });
+        igual('investimento: quantidade fracionada', AI.listar().find(i => i.nome === 'BTC').quantidade, 0.00215);
+        igual('investimento: recusados não foram cadastrados', AI.listar().length, 2);
+        await AI.editar(cdb.id, { ...CDB, quantidade: 10 });
+        igual('investimento: editar muda a quantidade', AI.obter(cdb.id).quantidade, 10);
+
+        // Aporte, resgate, rendimento e taxa
+        const saldoInicial = saldo();
+        await AI.registrar(cdb.id, 'aporte', { contaId: conta.id, valor: 100000, data: '2026-06-01', observacao: '' });
+        const lanAporte = D_registros('lancamentos')[0];
+        igual('aporte: lançamento sai da conta, sem categoria, ligado ao investimento', (({ tipo, situacao, categoriaId, origem, dataPagamento }) => [tipo, situacao, categoriaId, origem, dataPagamento])(lanAporte), ['aporte', 'pago', null, { investimentoId: cdb.id }, '2026-06-01']);
+        igual('aporte: reduz o saldo da conta', saldo(), saldoInicial - 100000);
+        igual('aporte: a movimentação aponta para o lançamento', AI.obter(cdb.id).movimentacoes[0], { tipo: 'aporte', data: '2026-06-01', valor: 100000, lancamentoId: lanAporte.id });
+        igual('aporte: não é despesa nem receita', [App.lancamentos.listarMovimentos('despesa').length, App.lancamentos.listarMovimentos('receita').length], [0, 0]);
+
+        await AI.registrar(cdb.id, 'resgate', { contaId: conta.id, valor: 30000, data: '2026-08-01', observacao: '' });
+        igual('resgate: volta para a conta como recebido', [saldo(), D_registros('lancamentos')[1].tipo, D_registros('lancamentos')[1].situacao], [saldoInicial - 100000 + 30000, 'resgate', 'recebido']);
+        igual('resgate: não é receita', App.lancamentos.listarMovimentos('receita').length, 0);
+
+        await AI.registrar(cdb.id, 'rendimento', { contaId: conta.id, valor: 3200, data: '2026-10-15', observacao: 'Juros do mês' });
+        const categoriaRend = App.categorias.listar('receita').find(c => c.nome === 'Rendimentos de investimentos');
+        const lanRend = App.lancamentos.listarMovimentos('receita')[0];
+        igual('rendimento: cria a categoria do sistema e vira receita recebida nela', [!!categoriaRend, lanRend.categoriaId === categoriaRend.id, lanRend.situacao, lanRend.observacao, lanRend.origem], [true, true, 'recebido', 'Juros do mês', { investimentoId: cdb.id }]);
+        igual('rendimento: soma no saldo da conta', saldo(), saldoInicial - 100000 + 30000 + 3200);
+
+        await AI.registrar(cdb.id, 'taxa', { contaId: conta.id, valor: 500, data: '2026-10-20', observacao: '' });
+        igual('taxa: reduz o saldo e não é despesa de consumo', [saldo(), D_registros('lancamentos')[3].tipo, App.lancamentos.listarMovimentos('despesa').length], [saldoInicial - 100000 + 30000 + 3200 - 500, 'taxa_investimento', 0]);
+        igual('movimentações: ficam em ordem de data', AI.obter(cdb.id).movimentacoes.map(m => m.tipo), ['aporte', 'resgate', 'rendimento', 'taxa']);
+
+        await erro('movimentação: valor zero', () => AI.registrar(cdb.id, 'aporte', { contaId: conta.id, valor: 0, data: '2026-06-01' }), 'maior que zero');
+        await erro('movimentação: conta inexistente', () => AI.registrar(cdb.id, 'aporte', { contaId: 'acc_x', valor: 100, data: '2026-06-01' }), 'Escolha a conta');
+        await erro('movimentação: data inválida', () => AI.registrar(cdb.id, 'aporte', { contaId: conta.id, valor: 100, data: '' }), 'data');
+        await erro('movimentação: tipo desconhecido', () => AI.registrar(cdb.id, 'x', { contaId: conta.id, valor: 100, data: '2026-06-01' }), 'Tipo');
+        await erro('movimentação: investimento inexistente', () => AI.registrar('inv_x', 'aporte', { contaId: conta.id, valor: 100, data: '2026-06-01' }), 'não encontrado');
+        igual('movimentação: recusadas não gravaram nada', [D_registros('lancamentos').length, AI.obter(cdb.id).movimentacoes.length], [4, 4]);
+
+        // Lançamentos gerados pelo investimento só mudam pela tela Investimentos
+        await erro('rendimento: não edita pela tela de entradas', () => App.lancamentos.editarMovimento(lanRend.id, { descricao: 'X', valor: 100, categoriaId: categoriaRend.id, contaId: conta.id, dataCompetencia: '2026-10-15', situacao: 'pendente' }), 'tela Investimentos');
+        await erro('rendimento: não exclui pela tela de entradas', () => App.lancamentos.excluirMovimento(lanRend.id), 'tela Investimentos');
+        await erro('rendimento: não marca como pendente pela tela de entradas', () => App.lancamentos.desfazerEfetivacao(lanRend.id), 'tela Investimentos');
+        await erro('rendimento: não efetiva pela tela de entradas', () => App.lancamentos.efetivar(lanRend.id, '2026-10-15'), 'tela Investimentos');
+        await erro('conta: não exclui conta com movimentações de investimento', () => App.contas.excluir(conta.id), 'Inative');
+
+        // Valor atual (RF-30)
+        await AI.atualizarValor(cdb.id, { data: '2026-10-31', valorAtual: 75000 });
+        const r = AI.resumo(AI.obter(cdb.id));
+        igual('valor atual: rentabilidade com aporte, resgate, rendimento, taxa e valor atual', [r.aportado, r.resgatado, r.rendimentos, r.taxas, r.valorAtual, r.rentabilidade, r.rentabilidadePct], [100000, 30000, 3200, 500, 75000, 7700, 0.077]);
+        await AI.atualizarValor(cdb.id, { data: '2026-10-31', valorAtual: 76000 });
+        igual('valor atual: a mesma data corrige o valor', AI.obter(cdb.id).atualizacoes, [{ data: '2026-10-31', valorAtual: 76000 }]);
+        await AI.atualizarValor(cdb.id, { data: '2026-09-30', valorAtual: 60000 });
+        igual('valor atual: histórico fica em ordem de data e vale o mais recente', [AI.obter(cdb.id).atualizacoes.map(a => a.data), AI.resumo(AI.obter(cdb.id)).valorAtual], [['2026-09-30', '2026-10-31'], 76000]);
+        await erro('valor atual: negativo', () => AI.atualizarValor(cdb.id, { data: '2026-11-01', valorAtual: -1 }), 'valor atual');
+        await erro('valor atual: data inválida', () => AI.atualizarValor(cdb.id, { data: '2026-02-30', valorAtual: 100 }), 'data');
+        await AI.removerAtualizacao(cdb.id, '2026-09-30');
+        igual('valor atual: remover uma atualização', AI.obter(cdb.id).atualizacoes.map(a => a.data), ['2026-10-31']);
+        await erro('valor atual: remover atualização inexistente', () => AI.removerAtualizacao(cdb.id, '2020-01-01'), 'não encontrada');
+        igual('carteira: resumo da carteira lê os dados', AI.resumoDaCarteira().valorAtual, 76000);
+
+        // Encerrar, excluir e desfazer movimentação
+        await erro('encerrar: investimento com valor atual não pode ser encerrado', () => AI.definirAtivo(cdb.id, false), 'ainda tem valor atual');
+        await AI.registrar(cdb.id, 'resgate', { contaId: conta.id, valor: 76000, data: '2026-11-01', observacao: '' });
+        await AI.atualizarValor(cdb.id, { data: '2026-11-01', valorAtual: 0 });
+        await AI.definirAtivo(cdb.id, false);
+        igual('encerrar: com valor zero pode', [AI.obter(cdb.id).ativo, AI.listar().map(i => i.nome), AI.listar(true).length], [false, ['BTC'], 2]);
+        await erro('encerrar: investimento encerrado não recebe movimentações', () => AI.registrar(cdb.id, 'aporte', { contaId: conta.id, valor: 100, data: '2026-11-02' }), 'encerrado');
+        await AI.definirAtivo(cdb.id, true);
+
+        await erro('excluir: investimento com movimentações não pode ser excluído', () => AI.excluir(cdb.id), 'movimentação');
+        await AI.excluir(AI.listar().find(i => i.nome === 'BTC').id);
+        igual('excluir: investimento sem movimentações pode ser excluído', AI.listar().map(i => i.nome), ['CDB Banco Inter 110% CDI']);
+
+        const saldoAntesTaxa = saldo();
+        const qtdLanc = D_registros('lancamentos').length;
+        const taxaMov = AI.obter(cdb.id).movimentacoes.find(m => m.tipo === 'taxa');
+        await AI.excluirMovimentacao(cdb.id, taxaMov.lancamentoId);
+        igual('excluir movimentação: some do investimento e da conta, e o saldo volta', [AI.obter(cdb.id).movimentacoes.some(m => m.tipo === 'taxa'), D_registros('lancamentos').length, saldo()], [false, qtdLanc - 1, saldoAntesTaxa + 500]);
+        await erro('excluir movimentação: id desconhecido', () => AI.excluirMovimentacao(cdb.id, 'lan_x'), 'não encontrada');
+        await erro('excluir movimentação: investimento inexistente', () => AI.excluirMovimentacao('inv_x', 'lan_x'), 'não encontrado');
+      }
+
+      // ---------- Dashboard: resultado, caixa, patrimônio e filtros (RF-32 a RF-37; regras 6.1 e 6.5) ----------
+      {
+        zerarDados();
+        const PN = App.calc.painel;
+        await App.contas.criar({ ...base, nome: 'A', saldoInicial: 100000 });
+        await App.contas.criar({ ...base, nome: 'B', saldoInicial: 0 });
+        const cA = App.contas.listar().find(c => c.nome === 'A');
+        const cB = App.contas.listar().find(c => c.nome === 'B');
+        for (const [nome, nat] of [['Moradia', 'despesa'], ['Mercado', 'despesa'], ['Eletrônicos', 'despesa'], ['Salário', 'receita']]) {
+          await App.categorias.criar({ nome, natureza: nat, cor: '#1d4ed8' });
+        }
+        const cat = (nome) => App.categorias.listar().find(c => c.nome === nome).id;
+        const mov = (tipo, descricao, valor, categoria, conta, comp, situacao, pag) => App.lancamentos.criarMovimento(tipo, {
+          descricao, valor, categoriaId: cat(categoria), contaId: conta.id, dataCompetencia: comp, dataVencimento: '', situacao, dataPagamento: pag || '', observacao: '' });
+        await mov('receita', 'Salário out', 500000, 'Salário', cA, '2026-10-05', 'recebido', '2026-10-05');
+        await mov('despesa', 'Aluguel out', 150000, 'Moradia', cA, '2026-10-01', 'pago', '2026-10-10');
+        await mov('receita', 'Salário nov', 500000, 'Salário', cA, '2026-11-05', 'recebido', '2026-11-05');
+        await mov('receita', 'Extra', 20000, 'Salário', cA, '2026-11-20', 'pendente');
+        await mov('despesa', 'Mercado nov', 30000, 'Mercado', cB, '2026-11-03', 'pago', '2026-11-04');
+        await mov('despesa', 'Aluguel nov', 150000, 'Moradia', cA, '2026-11-01', 'pago', '2026-11-10');
+        await mov('despesa', 'Compras previstas', 10000, 'Mercado', cA, '2026-11-25', 'pendente');
+        await App.lancamentos.criarTransferencia({ contaId: cA.id, contaDestinoId: cB.id, valor: 40000, data: '2026-11-06', observacao: '' });
+        // Cartão: notebook em 6x (dez a mai) e fone em 3x (nov a jan), juros e pagamento parcial na fatura de novembro
+        const HP = '2026-11-10';
+        await App.cartoes.criar({ nome: 'Nubank', instituicao: 'Nubank', limite: 800000, diaFechamento: 3, diaVencimento: 10, compraNoDiaFechamento: 'proxima' });
+        const nuP = App.cartoes.listar()[0];
+        await App.faturas.gerarFaturas(HP);
+        await App.compras.criar({ cartaoId: nuP.id, descricao: 'Notebook', valorTotal: 120000, parcelas: 6, dataCompra: '2026-11-05', categoriaId: cat('Eletrônicos'), observacao: '' }, HP);
+        await App.compras.criar({ cartaoId: nuP.id, descricao: 'Fone', valorTotal: 10000, parcelas: 3, dataCompra: '2026-11-02', categoriaId: cat('Eletrônicos'), observacao: '' }, HP);
+        const fatNov = App.faturas.idDaFatura(nuP, '2026-11');
+        await App.faturas.adicionarEncargo(fatNov, { tipo: 'juros', valor: 1520, descricao: 'Juros' }, HP);
+        await App.faturas.pagar(fatNov, { contaId: cA.id, valor: 2000, data: '2026-11-20' }, HP);
+        const catEncargos = cat('Encargos de cartão');
+        // Investimento: aporte de R$ 1.000 em 07/11 e valor atual de R$ 1.020 em 30/11
+        await App.investimentos.criar({ nome: 'CDB', classe: 'renda_fixa', instituicao: 'Banco', quantidade: '' });
+        const cdbP = App.investimentos.listar()[0];
+        await App.investimentos.registrar(cdbP.id, 'aporte', { contaId: cA.id, valor: 100000, data: '2026-11-07', observacao: '' });
+        await App.investimentos.atualizarValor(cdbP.id, { data: '2026-11-30', valorAtual: 102000 });
+
+        const P = PN.preparar({
+          contas: D_registros('contas'), lancamentos: D_registros('lancamentos'), cartoes: D_registros('cartoes'),
+          compras: D_registros('compras_cartao'), faturas: D_registros('faturas'), investimentos: D_registros('investimentos'),
+        });
+        const NOV = ['2026-11-01', '2026-11-30'];
+        const OUT = ['2026-10-01', '2026-10-31'];
+        const campos = (r) => [r.receitas, r.receitasPrevistas, r.despesas, r.despesasPrevistas, r.resultado];
+
+        // Resultado (competência)
+        igual('resultado nov: receitas e despesas realizadas, com o cartão pelo mês da fatura', campos(PN.resultado(P, ...NOV)), [500000, 20000, 184854, 10000, 315146]);
+        igual('resultado nov: despesas de cartão = parcela do mês + encargo', PN.resultado(P, ...NOV).despesasCartao, 3334 + 1520);
+        igual('resultado: pendente aparece como previsto e nunca soma no realizado', [PN.resultado(P, ...NOV).receitas, PN.resultado(P, ...NOV).receitasPrevistas], [500000, 20000]);
+        igual('resultado out: só lançamentos, nada de cartão ainda', campos(PN.resultado(P, ...OUT)), [500000, 0, 150000, 0, 350000]);
+        igual('resultado: transferência, aporte e pagamento de fatura não são despesa nem receita', PN.resultado(P, '2026-11-01', '2026-11-30').despesas - 4854, 180000);
+        const ordenado = (obj) => Object.entries(obj).sort((a, b) => a[0].localeCompare(b[0]));
+        igual('resultado: despesas por categoria (cartão entra com a categoria da compra e dos encargos)', ordenado(PN.resultado(P, ...NOV).porCategoria),
+          ordenado({ [cat('Moradia')]: 150000, [cat('Mercado')]: 30000, [cat('Eletrônicos')]: 3334, [catEncargos]: 1520 }));
+        igual('resultado dez: parcelas do cartão caem pelo vencimento da fatura', [PN.resultado(P, '2026-12-01', '2026-12-31').despesas, PN.resultado(P, '2026-12-01', '2026-12-31').despesasCartao], [23333, 23333]);
+        igual('resultado: período personalizado (só 01 a 05 de nov)', campos(PN.resultado(P, '2026-11-01', '2026-11-05')), [500000, 0, 180000, 0, 320000]);
+
+        // Filtros (RF-37)
+        igual('filtro por conta: só os lançamentos da conta, sem cartão', campos(PN.resultado(P, ...NOV, { contaId: cB.id })), [0, 0, 30000, 0, -30000]);
+        igual('filtro por categoria', campos(PN.resultado(P, ...NOV, { categoriaId: cat('Moradia') })), [0, 0, 150000, 0, -150000]);
+        igual('filtro por cartão: só as despesas do cartão', campos(PN.resultado(P, ...NOV, { cartaoId: nuP.id })), [0, 0, 4854, 0, -4854]);
+        igual('filtro por conta e cartão: lançamentos da conta mais despesas do cartão', campos(PN.resultado(P, ...NOV, { contaId: cA.id, cartaoId: nuP.id })), [500000, 20000, 154854, 10000, 345146]);
+        igual('filtro por cartão e categoria', campos(PN.resultado(P, ...NOV, { cartaoId: nuP.id, categoriaId: cat('Eletrônicos') })), [0, 0, 3334, 0, -3334]);
+
+        // Caixa (pagamento/recebimento)
+        const cx = PN.caixa(P, ...NOV);
+        igual('caixa nov: entradas e saídas realizadas, incluindo fatura paga e aporte', [cx.entradas, cx.saidas, cx.liquido], [500000, 282000, 218000]);
+        igual('caixa nov: detalhe por tipo', cx.detalhe, { receitas: 500000, resgates: 0, despesas: 180000, faturas: 2000, aportes: 100000, taxas: 0 });
+        igual('caixa: transferência não conta', PN.caixa(P, '2026-11-06', '2026-11-06').saidas + PN.caixa(P, '2026-11-06', '2026-11-06').entradas, 0);
+        igual('caixa: filtro por conta', (({ entradas, saidas }) => [entradas, saidas])(PN.caixa(P, ...NOV, { contaId: cB.id })), [0, 30000]);
+        igual('caixa: filtro por cartão pega o pagamento da fatura', (({ entradas, saidas }) => [entradas, saidas])(PN.caixa(P, ...NOV, { cartaoId: nuP.id })), [0, 2000]);
+        igual('caixa: filtro por categoria só vale para receitas e despesas', (({ entradas, saidas }) => [entradas, saidas])(PN.caixa(P, ...NOV, { categoriaId: cat('Moradia') })), [0, 150000]);
+
+        // Saldos, investimentos, faturas e patrimônio em uma data
+        igual('saldo: no fim de novembro', PN.saldoEm(P, '2026-11-30'), 668000);
+        igual('saldo: no fim de outubro (só o que já tinha acontecido)', PN.saldoEm(P, '2026-10-31'), 450000);
+        igual('saldo: por conta', [PN.saldoEm(P, '2026-11-30', cA.id), PN.saldoEm(P, '2026-11-30', cB.id)], [658000, 10000]);
+        igual('saldo: o motor com data devolve o mesmo que o saldo atual quando a data é futura', App.calc.saldos(D_registros('contas'), D_registros('lancamentos'), '2099-01-01'), App.calc.saldos(D_registros('contas'), D_registros('lancamentos')));
+        igual('investimentos: valor atual em novembro e antes do aporte', [PN.investimentosEm(P, '2026-11-30').valorAtual, PN.investimentosEm(P, '2026-10-31').valorAtual], [102000, 0]);
+        igual('faturas: a pagar e parcelas futuras no fim de novembro', PN.obrigacoesDeCartao(P, '2026-11-30'), { aPagar: 26187, parcelasFuturas: 103333 });
+        igual('faturas: antes das compras e do encargo não havia obrigação', PN.obrigacoesDeCartao(P, '2026-10-31'), { aPagar: 0, parcelasFuturas: 0 });
+        igual('faturas: no meio de dezembro a fatura de janeiro já é "a pagar"', PN.obrigacoesDeCartao(P, '2026-12-15'), { aPagar: 49520, parcelasFuturas: 80000 });
+        igual('faturas: o total (a pagar + futuras) é o mesmo que o limite utilizado', PN.obrigacoesDeCartao(P, '2026-12-15').aPagar + PN.obrigacoesDeCartao(P, '2026-12-15').parcelasFuturas, App.faturas.resumoDoCartao(nuP, '2026-12-15').utilizado);
+        igual('faturas: filtro por cartão', PN.obrigacoesDeCartao(P, '2026-11-30', nuP.id), { aPagar: 26187, parcelasFuturas: 103333 });
+        igual('faturas: cartão que não existe não soma nada', PN.obrigacoesDeCartao(P, '2026-11-30', 'car_x'), { aPagar: 0, parcelasFuturas: 0 });
+        igual('patrimônio nov: saldos + investimentos - faturas a pagar - parcelas futuras', PN.patrimonio(P, '2026-11-30'), { saldos: 668000, investimentos: 102000, faturasAPagar: 26187, parcelasFuturas: 103333, patrimonio: 640480 });
+        igual('patrimônio out: só os saldos', PN.patrimonio(P, '2026-10-31').patrimonio, 450000);
+        igual('patrimônio: dividir a dívida entre "a pagar" e "futuras" não muda o total', [PN.patrimonio(P, '2026-11-30').patrimonio, PN.patrimonio(P, '2026-12-15').patrimonio], [640480, 640480]);
+        igual('patrimônio: aporte não muda o patrimônio (só a rentabilidade)', PN.patrimonio(P, '2026-11-30').patrimonio - PN.patrimonio(P, '2026-10-31').patrimonio, 640480 - 450000);
+
+        // Fotografia do período e comparação (RF-33, RF-34)
+        const HOJE_P = '2026-12-15';
+        const fNov = PN.fotografia(P, ...NOV, {}, HOJE_P);
+        igual('cards nov: posição lida no fim do mês', [fNov.corte, fNov.saldo, fNov.investido, fNov.faturasEmAberto, fNov.parcelasFuturas, fNov.patrimonio], ['2026-11-30', 668000, 102000, 26187, 103333, 640480]);
+        igual('cards nov: resultado e rentabilidade dos investimentos', [fNov.receitas, fNov.despesas, fNov.resultado, fNov.rentabilidadeInvestimentos], [500000, 184854, 315146, 2000]);
+        const fDez = PN.fotografia(P, '2026-12-01', '2026-12-31', {}, HOJE_P);
+        igual('cards dez (mês em curso): a posição é lida até hoje', [fDez.corte, fDez.patrimonio, fDez.receitas, fDez.despesas], ['2026-12-15', 640480, 0, 23333]);
+        igual('cards: filtro por conta muda o saldo, mas não o patrimônio', [PN.fotografia(P, ...NOV, { contaId: cB.id }, HOJE_P).saldo, PN.fotografia(P, ...NOV, { contaId: cB.id }, HOJE_P).patrimonio], [10000, 640480]);
+        igual('cards: filtro por cartão muda faturas em aberto', PN.fotografia(P, ...NOV, { cartaoId: nuP.id }, HOJE_P).faturasEmAberto, 26187);
+        igual('período anterior: mês inteiro vira o mês anterior', PN.periodoAnterior('2026-11-01', '2026-11-30'), { de: '2026-10-01', ate: '2026-10-31' });
+        igual('período anterior: janeiro vira dezembro', PN.periodoAnterior('2026-01-01', '2026-01-31'), { de: '2025-12-01', ate: '2025-12-31' });
+        igual('período anterior: intervalo livre usa o mesmo tamanho', PN.periodoAnterior('2026-11-10', '2026-11-19'), { de: '2026-10-31', ate: '2026-11-09' });
+        igual('variação: valor e percentual', [PN.variacao(300, 200), PN.variacao(100, -200), PN.variacao(5, 0), PN.variacao(0, 0)], [{ delta: 100, pct: 0.5 }, { delta: 300, pct: 1.5 }, { delta: 5, pct: null }, { delta: 0, pct: null }]);
+        const fOut = PN.fotografia(P, ...OUT, {}, HOJE_P);
+        igual('cards: comparação com o mês anterior (resultado de nov contra out)', PN.variacao(fNov.resultado, fOut.resultado), { delta: 315146 - 350000, pct: (315146 - 350000) / 350000 });
+
+        // Séries dos gráficos (RF-35)
+        igual('série mensal: receitas x despesas', PN.serieMensal(P, '2026-11', 2), [
+          { mes: '2026-10', receitas: 500000, despesas: 150000, resultado: 350000 },
+          { mes: '2026-11', receitas: 500000, despesas: 184854, resultado: 315146 }]);
+        igual('série mensal: o filtro vale também nos gráficos', PN.serieMensal(P, '2026-11', 2, { categoriaId: cat('Moradia') }).map(p => p.despesas), [150000, 150000]);
+        igual('série mensal: meses sem movimento aparecem zerados e em ordem', PN.serieMensal(P, '2026-02', 3).map(p => [p.mes, p.receitas, p.despesas]), [['2025-12', 0, 0], ['2026-01', 0, 0], ['2026-02', 0, 0]]);
+        igual('evolução do patrimônio: fim de cada mês, o mês em curso até hoje', PN.evolucaoDoPatrimonio(P, '2026-12', 3, HOJE_P).map(p => [p.mes, p.patrimonio]), [['2026-10', 450000], ['2026-11', 640480], ['2026-12', 640480]]);
+
+        // Conta aberta depois não entra em datas anteriores à abertura
+        await App.contas.criar({ ...base, nome: 'C', saldoInicial: 1000, dataAbertura: '2026-12-01' });
+        const P2 = PN.preparar({ contas: D_registros('contas'), lancamentos: D_registros('lancamentos'), cartoes: D_registros('cartoes'), compras: D_registros('compras_cartao'), faturas: D_registros('faturas'), investimentos: D_registros('investimentos') });
+        igual('saldo: conta aberta em dezembro não existia em novembro', [PN.saldoEm(P2, '2026-11-30'), PN.saldoEm(P2, '2026-12-15')], [668000, 669000]);
+      }
+
+      // ---------- Planilha .xlsx (RF-41): estrutura do arquivo ----------
+      {
+        // Leitor mínimo de ZIP, só para conferir o que o gerador escreveu (inclusive os CRC).
+        const lerZip = async (bytes) => {
+          const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+          const fim = bytes.length - 22;
+          if (v.getUint32(fim, true) !== 0x06054b50) throw new Error('fim do ZIP não encontrado');
+          const total = v.getUint16(fim + 10, true);
+          let pos = v.getUint32(fim + 16, true);
+          const saida = {};
+          for (let i = 0; i < total; i++) {
+            if (v.getUint32(pos, true) !== 0x02014b50) throw new Error('entrada central inválida');
+            const crc = v.getUint32(pos + 16, true), tamComprimido = v.getUint32(pos + 20, true), tamOriginal = v.getUint32(pos + 24, true), metodo = v.getUint16(pos + 10, true);
+            const nomeLen = v.getUint16(pos + 28, true), extraLen = v.getUint16(pos + 30, true), comLen = v.getUint16(pos + 32, true);
+            const local = v.getUint32(pos + 42, true);
+            const nome = new TextDecoder().decode(bytes.slice(pos + 46, pos + 46 + nomeLen));
+            const inicio = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
+            let dados = bytes.slice(inicio, inicio + tamComprimido);
+            if (metodo === 8) dados = new Uint8Array(await new Response(new Blob([dados]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+            saida[nome] = { texto: new TextDecoder().decode(dados), crcOk: App.xlsx.crc32(dados) === crc, metodo, tamanhoOk: dados.length === tamOriginal, tamanhoNoZip: tamComprimido };
+            pos += 46 + nomeLen + extraLen + comLen;
+          }
+          return saida;
+        };
+        const planilhas = [
+          { nome: 'Teste: a/b?', colunas: [{ titulo: 'Nome' }, { titulo: 'Valor', tipo: 'moeda' }, { titulo: 'Data', tipo: 'data' }, { titulo: 'Pct', tipo: 'percentual' }, { titulo: 'N', tipo: 'numero' }],
+            linhas: [['Ana & <Cia> "x"', 123456, '2026-11-10', 0.0532, 3], ['Sem valores', null, null, null, null], ['Ctrl\u0001 ok', -50, 'texto', 0, 0]] },
+          { nome: 'Teste: a/b?', colunas: [{ titulo: 'X' }], linhas: [] },
+        ];
+        const bytes = await App.xlsx.criar(planilhas);
+        const zip = await lerZip(bytes);
+        igual('xlsx: começa com a assinatura de ZIP (PK)', [bytes[0], bytes[1], bytes[2], bytes[3]], [0x50, 0x4b, 0x03, 0x04]);
+        igual('xlsx: arquivos do pacote', Object.keys(zip), ['[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels', 'xl/styles.xml', 'xl/worksheets/sheet1.xml', 'xl/worksheets/sheet2.xml']);
+        igual('xlsx: o CRC de todos os arquivos confere', Object.values(zip).every(a => a.crcOk), true);
+        igual('xlsx: nomes das abas sem caracteres proibidos e sem repetição', App.xlsx.nomesDeAbas(planilhas), ['Teste  a b', 'Teste  a b (2)']);
+        igual('xlsx: nome de aba com mais de 31 caracteres é cortado', App.xlsx.nomesDeAbas([{ nome: 'x'.repeat(40) }])[0].length, 31);
+        igual('xlsx: workbook lista as duas abas', [zip['xl/workbook.xml'].texto.includes('name="Teste  a b"'), zip['xl/workbook.xml'].texto.includes('name="Teste  a b (2)"')], [true, true]);
+        const s1 = zip['xl/worksheets/sheet1.xml'].texto;
+        igual('xlsx: texto com caracteres especiais é escapado', s1.includes('Ana &amp; &lt;Cia&gt; &quot;x&quot;'), true);
+        igual('xlsx: caractere de controle é removido', [s1.includes('Ctrl ok') || s1.includes('Ctrl' + 'ok') || s1.includes('Ctrl ok'), s1.includes('\u0001')], [true, false]);
+        igual('xlsx: valor em reais com duas casas, a partir de centavos', [s1.includes('<v>1234.56</v>'), s1.includes('<v>-0.50</v>')], [true, true]);
+        igual('xlsx: data vira número de série do Excel', s1.includes('<v>' + App.xlsx.serieDaData('2026-11-10') + '</v>'), true);
+        igual('xlsx: percentual e número', [s1.includes('<v>0.0532</v>'), s1.includes('<c r="E2"><v>3</v></c>')], [true, true]);
+        igual('xlsx: texto numa coluna de data fica como texto', s1.includes('<c r="C4" t="inlineStr"><is><t xml:space="preserve">texto</t></is></c>'), true);
+        igual('xlsx: células vazias não são escritas', [s1.includes('r="B3"'), s1.includes('r="A3"')], [false, true]);
+        igual('xlsx: primeira linha congelada e cabeçalho em estilo próprio', [s1.includes('state="frozen"'), s1.includes('r="A1" s="1" t="inlineStr"')], [true, true]);
+        igual('xlsx: a segunda aba, sem linhas, só tem o cabeçalho', (zip['xl/worksheets/sheet2.xml'].texto.match(/<row /g) || []).length, 1);
+        igual('xlsx: estilos de data, moeda e percentual existem', ['dd/mm/yyyy', '&quot;R$&quot;', 'numFmtId="10"'].map(t => zip['xl/styles.xml'].texto.includes(t)), [true, true, true]);
+        igual('xlsx: CRC-32 conhecido', App.xlsx.crc32(new TextEncoder().encode('123456789')), 0xcbf43926);
+        igual('xlsx: letras das colunas', [0, 25, 26, 27, 701, 702].map(App.xlsx.letrasDaColuna), ['A', 'Z', 'AA', 'AB', 'ZZ', 'AAA']);
+        igual('xlsx: números de série de datas conhecidas', [App.xlsx.serieDaData('2026-01-01'), App.xlsx.serieDaData('1900-03-01'), App.xlsx.serieDaData('2000-01-01')], [46023, 61, 36526]);
+        // Compressão (DEFLATE) do .xlsx
+        const grande = { nome: 'Grande', colunas: [{ titulo: 'Descrição' }, { titulo: 'Valor', tipo: 'moeda' }, { titulo: 'Data', tipo: 'data' }],
+          linhas: Array.from({ length: 400 }, (_, i) => ['Lançamento número ' + i, 1000 + i, '2026-11-' + String(1 + (i % 28)).padStart(2, '0')]) };
+        const comprimido = await App.xlsx.criar([grande]);
+        const armazenado = await App.xlsx.criar([grande], { comprimir: false });
+        const zc = await lerZip(comprimido), za = await lerZip(armazenado);
+        igual('xlsx comprimido: o arquivo fica bem menor que o armazenado', [comprimido.length < armazenado.length / 3, comprimido.length < armazenado.length], [true, true]);
+        igual('xlsx comprimido: planilha usa DEFLATE (método 8) e o armazenado usa método 0', [zc['xl/worksheets/sheet1.xml'].metodo, za['xl/worksheets/sheet1.xml'].metodo], [8, 0]);
+        igual('xlsx comprimido: depois de descomprimir, CRC e tamanho originais conferem em todos os arquivos', [Object.values(zc).every(a => a.crcOk && a.tamanhoOk), Object.values(za).every(a => a.crcOk && a.tamanhoOk)], [true, true]);
+        igual('xlsx comprimido: o conteúdo é idêntico ao do arquivo sem compressão', Object.keys(zc).every(n => zc[n].texto === za[n].texto), true);
+        let semAbas = null;
+        try { await App.xlsx.criar([]); } catch (e) { semAbas = e.message; }
+        igual('xlsx: sem abas é recusado', semAbas !== null, true);
+      }
+
+      // ---------- Exportação para Excel (RF-41): conteúdo, com os dados do cenário do dashboard ----------
+      {
+        const abas = App.exportacao.montarPlanilhas();
+        const por = (nome) => abas.find(a => a.nome === nome);
+        igual('exportação: abas', abas.map(a => a.nome), ['Lançamentos', 'Compras no cartão', 'Parcelas do cartão', 'Investimentos', 'Movimentações investimentos', 'Valores atuais']);
+        igual('exportação: toda linha tem uma célula por coluna', abas.every(a => a.linhas.every(l => l.length === a.colunas.length)), true);
+        igual('exportação: lançamentos, compras e parcelas', [por('Lançamentos').linhas.length, por('Compras no cartão').linhas.length, por('Parcelas do cartão').linhas.length], [D_registros('lancamentos').length, 2, 9]);
+        igual('exportação: lançamentos em ordem de competência, com nomes no lugar de códigos', por('Lançamentos').linhas[0], ['Despesa', 'Aluguel out', 150000, 'Moradia', 'A', '', '2026-10-01', null, '2026-10-10', 'Pago', '', '']);
+        igual('exportação: transferência mostra a conta de destino', por('Lançamentos').linhas.find(l => l[0] === 'Transferência').slice(4, 6), ['A', 'B']);
+        igual('exportação: origem de aporte e de pagamento de fatura', [por('Lançamentos').linhas.find(l => l[0] === 'Aporte')[10], por('Lançamentos').linhas.find(l => l[0] === 'Pagamento de fatura')[10]], ['Investimento: CDB', 'Fatura: Nubank 11/2026']);
+        igual('exportação: compra com o total e a quantidade de parcelas', por('Compras no cartão').linhas.find(l => l[1] === 'Notebook').slice(0, 8), ['2026-11-05', 'Notebook', 'Nubank', 'Eletrônicos', 120000, 6, 'Ativa', 0]);
+        igual('exportação: parcelas com mês da fatura', por('Parcelas do cartão').linhas.filter(l => l[1] === 'Fone').map(l => [l[3], l[4], l[5]]), [['1/3', '11/2026', 3334], ['2/3', '12/2026', 3333], ['3/3', '01/2027', 3333]]);
+        igual('exportação: investimento com rentabilidade em reais e em fração', por('Investimentos').linhas[0], ['CDB', 'Renda fixa', 'Banco', null, 100000, 0, 0, 0, 102000, '2026-11-30', 2000, 0.02, 'Ativo']);
+        igual('exportação: movimentações e valores atuais dos investimentos', [por('Movimentações investimentos').linhas, por('Valores atuais').linhas], [[['CDB', '2026-11-07', 'Aporte', 100000, 'A']], [['CDB', '2026-11-30', 102000]]]);
+        const bytesX = await App.exportacao.gerarXlsx();
+        igual('exportação: gerarXlsx produz um ZIP com uma aba por assunto', [bytesX[0], bytesX[1], new TextDecoder().decode(bytesX).includes('xl/worksheets/sheet6.xml')], [0x50, 0x4b, true]);
+        igual('exportação: nome do arquivo', App.exportacao.nomeDoArquivo(new Date(2026, 10, 5)), 'MeuFinanceiro-2026-11-05.xlsx');
+      }
+
+      // ---------- Backup e restauração (RF-39, RF-40), com uma pasta falsa em memória ----------
+      {
+        const BA = App.backup;
+        class ArquivoFalso {
+          constructor(n) { this.kind = 'file'; this.name = n; this.texto = ''; }
+          async getFile() { const t = this.texto; return { text: async () => t }; }
+          async createWritable() { const self = this; let buf = ''; return { write: async (t) => { buf += t; }, close: async () => { self.texto = buf; }, abort: async () => {} }; }
+        }
+        class PastaFalsa {
+          constructor(n) { this.kind = 'directory'; this.name = n; this.itens = new Map(); }
+          async getDirectoryHandle(n, o) { let d = this.itens.get(n); if (!d || d.kind !== 'directory') { if (!(o && o.create)) { const e = new Error('não existe'); e.name = 'NotFoundError'; throw e; } d = new PastaFalsa(n); this.itens.set(n, d); } return d; }
+          async getFileHandle(n, o) { let f = this.itens.get(n); if (!f || f.kind !== 'file') { if (!(o && o.create)) { const e = new Error('não existe'); e.name = 'NotFoundError'; throw e; } f = new ArquivoFalso(n); this.itens.set(n, f); } return f; }
+          async *entries() { for (const par of Array.from(this.itens.entries())) yield par; }
+          async removeEntry(n) { this.itens.delete(n); }
+        }
+        const raiz = new PastaFalsa('Dados');
+        const nomesDados = ['config', 'contas', 'categorias', 'lancamentos', 'recorrencias', 'cartoes', 'compras_cartao', 'faturas', 'investimentos'];
+        App.storage.ARQUIVOS = nomesDados;
+        App.storage.VERSAO_FORMATO = 1;
+        App.storage.pasta = () => raiz;
+        App.storage.escreverTexto = async (h, t) => { const w = await h.createWritable(); await w.write(t); await w.close(); };
+        let substituicoes = 0;
+        App.storage.substituirDados = async (c) => { substituicoes++; Object.keys(c).forEach(n => { memoria[n] = c[n]; }); return { falhas: [] }; };
+        const clone = (o) => JSON.parse(JSON.stringify(o));
+        const estadoAtual = () => { const e = {}; nomesDados.forEach(n => { e[n] = clone(memoria[n]); }); return e; };
+        const pastaBackups = async () => raiz.getDirectoryHandle('backups');
+
+        // Nomes e retenção
+        igual('backup: nome da cópia com minutos', BA.nomeDaCopia(new Date(2026, 10, 10, 14, 32)), '2026-11-10_14-32');
+        igual('backup: nome com zeros à esquerda e sufixo', BA.nomeDaCopia(new Date(2026, 0, 5, 7, 3), 'antes-de-restaurar'), '2026-01-05_07-03_antes-de-restaurar');
+        igual('backup: interpretar nome automático', BA.interpretarNome('2026-11-10_14-32'), { nome: '2026-11-10_14-32', data: '2026-11-10', hora: '14:32', sufixo: '', automatico: true });
+        igual('backup: interpretar nome com sufixo', (({ sufixo, automatico }) => [sufixo, automatico])(BA.interpretarNome('2026-11-10_14-32_antes-de-restaurar')), ['antes-de-restaurar', false]);
+        igual('backup: nome fora do padrão é ignorado', [BA.interpretarNome('qualquer'), BA.interpretarNome('2026-11-10')], [null, null]);
+        const nomesRet = ['2026-11-10_10-00', '2026-11-10_10-05', '2026-11-10_10-10', '2026-11-09_09-00', '2026-11-09_18-00', '2026-10-01_08-00', '2026-08-01_08-00', '2026-11-10_12-00_antes-de-restaurar'];
+        igual('retenção: mantém as N mais recentes e a última de cada dia recente; nunca apaga cópia com sufixo', BA.selecionarParaApagar(nomesRet, '2026-11-10', 2, 30), ['2026-11-10_10-00', '2026-11-09_09-00', '2026-10-01_08-00', '2026-08-01_08-00']);
+        igual('retenção: com limite folgado nada é apagado', BA.selecionarParaApagar(nomesRet, '2026-11-10', 30, 30), []);
+        igual('retenção: lista vazia', BA.selecionarParaApagar([], '2026-11-10', 5, 30), []);
+
+        // Criar, listar e ler
+        const nomeCopia = await BA.criarCopia();
+        const nomeCopia2 = await BA.criarCopia();
+        const pasta = await pastaBackups();
+        const listaA = await BA.listar();
+        igual('backup: a cópia vai para backups/ com os 9 arquivos', [[...(await pasta.getDirectoryHandle(nomeCopia)).itens.keys()].sort(), BA.ultimo().nome], [nomesDados.map(n => n + '.json').sort(), nomeCopia2]);
+        igual('backup: cópias no mesmo minuto compartilham a pasta', (nomeCopia === nomeCopia2) === (listaA.length === 1), true);
+        igual('backup: o conteúdo copiado é igual aos dados', await BA.lerCopia(nomeCopia), estadoAtual());
+        igual('backup: o arquivo copiado é JSON formatado, igual ao dos dados', (await (await (await pasta.getDirectoryHandle(nomeCopia)).getFileHandle('contas.json')).getFile()).text ? true : false, true);
+        const arqContas = await (await pasta.getDirectoryHandle(nomeCopia)).getFileHandle('contas.json');
+        igual('backup: texto do arquivo termina em quebra de linha', arqContas.texto.endsWith('\n') && arqContas.texto.includes('\n  '), true);
+        await erro('backup: cópia inexistente', () => BA.lerCopia('2000-01-01_00-00'), 'não foi encontrada');
+        const pastaCopia = await pasta.getDirectoryHandle(nomeCopia);
+        const guardado = pastaCopia.itens.get('faturas.json');
+        pastaCopia.itens.delete('faturas.json');
+        await erro('backup: cópia incompleta', () => BA.lerCopia(nomeCopia), 'incompleta');
+        const danificado = new ArquivoFalso('faturas.json'); danificado.texto = '{ não é json';
+        pastaCopia.itens.set('faturas.json', danificado);
+        await erro('backup: arquivo danificado', () => BA.lerCopia(nomeCopia), 'danificado');
+        const velho = new ArquivoFalso('faturas.json'); velho.texto = JSON.stringify({ versao: 99, registros: [] });
+        pastaCopia.itens.set('faturas.json', velho);
+        await erro('backup: versão mais nova do formato', () => BA.lerCopia(nomeCopia), 'versão mais nova');
+        pastaCopia.itens.set('faturas.json', guardado);
+        igual('backup: cópia íntegra volta a ser lida', (await BA.lerCopia(nomeCopia)).faturas.registros.length > 0, true);
+
+        // Retenção na pasta (limite de cópias)
+        for (let m = 0; m < 35; m++) await pasta.getDirectoryHandle('2000-01-01_10-' + String(m).padStart(2, '0'), { create: true });
+        await pasta.getDirectoryHandle('2000-01-01_10-00_antes-de-restaurar', { create: true });
+        const apagadas = await BA.aplicarRetencao();
+        igual('retenção: com o padrão de 30 cópias, as mais antigas saem', [(await BA.listar()).filter(c => c.automatico).length, apagadas.length], [30, listaA.length + 35 - 30]);
+        igual('retenção: a cópia com sufixo continua lá', (await BA.listar()).some(c => c.sufixo === 'antes-de-restaurar'), true);
+        memoria.config.preferencias = { backupsMantidos: 5 };
+        await BA.aplicarRetencao();
+        igual('retenção: o limite é configurável', [BA.copiasMantidas(), (await BA.listar()).filter(c => c.automatico).length], [5, 5]);
+        delete memoria.config.preferencias;
+        igual('retenção: sem preferência o padrão é 30', BA.copiasMantidas(), 30);
+
+        // Automático
+        let concluidos = 0;
+        App.eventos.on('backup:concluido', () => { concluidos++; });
+        await BA.executarAutomatico();
+        igual('automático: cria a cópia, aplica a retenção e avisa', [concluidos, (await BA.listar()).some(c => c.nome === BA.nomeDaCopia(new Date()))], [1, true]);
+
+        // Redução de tráfego: intervalo mínimo, cópia idêntica não é gravada
+        igual('backup: atraso sem cópia anterior é só o sossego de 5 s', BA.atrasoDoProximoBackup(1000000, 0, 600000), 5000);
+        igual('backup: logo depois de uma cópia, espera o intervalo mínimo', BA.atrasoDoProximoBackup(1000000, 1000000 - 60000, 600000), 540000);
+        igual('backup: passado o intervalo, volta ao sossego de 5 s', BA.atrasoDoProximoBackup(2000000, 1000000, 600000), 5000);
+        igual('backup: intervalo padrão de 10 minutos e preferência configurável', [BA.intervaloMinutos(), (memoria.config.preferencias = { backupIntervaloMinutos: 30 }, BA.intervaloMinutos()), (memoria.config.preferencias = { backupIntervaloMinutos: 0 }, BA.intervaloMinutos()), (memoria.config.preferencias = { backupIntervaloMinutos: 999 }, BA.intervaloMinutos())], [10, 30, 10, 240]);
+        delete memoria.config.preferencias;
+        const nomeBase = await BA.criarCopia(undefined, true);
+        const arqBase = await (await (await pasta.getDirectoryHandle(nomeBase)).getFileHandle('contas.json'));
+        const tocado = { n: 0 };
+        const escreverOriginalR = App.storage.escreverTexto;
+        App.storage.escreverTexto = async (h, tx) => { tocado.n++; return escreverOriginalR(h, tx); };
+        const nomeIgual = await BA.criarCopia();
+        igual('backup: se nada mudou desde a última cópia, não grava nada de novo', [nomeIgual, tocado.n], [nomeBase, 0]);
+        const nomeForcado = await BA.criarCopia(undefined, true);
+        igual('backup: cópia pedida pelo usuário grava mesmo sem mudanças', [nomeForcado, tocado.n], [nomeBase, 9]);
+        memoria.config.marca = 'mudou';
+        tocado.n = 0;
+        await BA.criarCopia();
+        igual('backup: se algo mudou, grava de novo', tocado.n, 9);
+        delete memoria.config.marca;
+        App.storage.escreverTexto = escreverOriginalR;
+
+        // Arquivo único (backup manual)
+        const unico = BA.arquivoUnico();
+        igual('manual: nome do arquivo único', /^MeuFinanceiro-backup-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\.json$/.test(unico.nome), true);
+        const lido = BA.lerArquivoUnico(unico.texto);
+        igual('manual: ida e volta preserva todos os dados', [lido.conjunto, lido.aplicacao], [estadoAtual(), App.versao]);
+        igual('manual: resumo mostra quantos registros há em cada arquivo', (({ contas, lancamentos, compras_cartao, config }) => [contas, lancamentos, compras_cartao, config])(BA.resumo(lido.conjunto)), [D_registros('contas').length, D_registros('lancamentos').length, 2, undefined]);
+        await erro('manual: arquivo que não é JSON', () => Promise.resolve().then(() => BA.lerArquivoUnico('abc')), 'não foi possível ler');
+        await erro('manual: JSON de outro programa', () => Promise.resolve().then(() => BA.lerArquivoUnico('{"a":1}')), 'não é um backup');
+        await erro('manual: arquivo de versão futura', () => Promise.resolve().then(() => BA.lerArquivoUnico(JSON.stringify({ ...JSON.parse(unico.texto), versaoDoArquivo: 99 }))), 'mais nova');
+        const semContas = JSON.parse(unico.texto); delete semContas.arquivos.contas;
+        await erro('manual: backup incompleto', () => Promise.resolve().then(() => BA.lerArquivoUnico(JSON.stringify(semContas))), 'incompleto');
+        const registrosErrados = JSON.parse(unico.texto); registrosErrados.arquivos.lancamentos.registros = 'x';
+        await erro('manual: arquivo sem lista de registros', () => Promise.resolve().then(() => BA.lerArquivoUnico(JSON.stringify(registrosErrados))), 'lista de registros');
+        const estrutura = JSON.parse(unico.texto); estrutura.arquivos.contas = [];
+        await erro('manual: arquivo com formato inesperado', () => Promise.resolve().then(() => BA.lerArquivoUnico(JSON.stringify(estrutura))), 'formato esperado');
+        const futuro = JSON.parse(unico.texto); futuro.arquivos.contas.versao = 99;
+        await erro('manual: arquivo de dados de versão futura', () => Promise.resolve().then(() => BA.lerArquivoUnico(JSON.stringify(futuro))), 'versão mais nova');
+
+        // Restauração (RF-40)
+        const instantaneo = estadoAtual();
+        await App.contas.criar({ ...base, nome: 'Conta nova depois do backup' });
+        igual('restaurar: antes, o estado atual tem a conta nova', D_registros('contas').some(c => c.nome === 'Conta nova depois do backup'), true);
+        const estadoComConta = estadoAtual();
+        const antesPastas = (await BA.listar()).length;
+        const res = await BA.restaurar(clone(instantaneo));
+        igual('restaurar: troca os dados pelos do backup', [memoria.contas.registros.some(c => c.nome === 'Conta nova depois do backup'), substituicoes, res.falhas], [false, 1, []]);
+        igual('restaurar: guarda antes uma cópia de segurança do estado atual', [(await BA.listar()).some(c => c.nome === res.copiaDeSeguranca && c.sufixo === 'antes-de-restaurar'), await BA.lerCopia(res.copiaDeSeguranca)], [true, estadoComConta]);
+        igual('restaurar: o estado restaurado é igual ao backup', estadoAtual(), instantaneo);
+        const invalido = clone(instantaneo); delete invalido.cartoes;
+        const pastasAntes = (await BA.listar()).length;
+        await erro('restaurar: backup inválido é recusado antes de qualquer alteração', () => BA.restaurar(invalido), 'incompleto');
+        igual('restaurar: recusado não cria cópia nem troca dados', [(await BA.listar()).length, substituicoes], [pastasAntes, 1]);
+        const escreverOriginal = App.storage.escreverTexto;
+        App.storage.escreverTexto = async () => { throw new Error('disco cheio'); };
+        await erro('restaurar: sem conseguir guardar a cópia de segurança, cancela tudo', () => BA.restaurar(clone(instantaneo)), 'cópia de segurança');
+        App.storage.escreverTexto = escreverOriginal;
+        igual('restaurar: cancelado não trocou os dados', substituicoes, 1);
+        const doDisco = await BA.lerCopia(nomeCopia);
+        const aposDisco = await BA.restaurar(doDisco);
+        igual('restaurar: também funciona a partir de uma cópia da pasta backups', [aposDisco.falhas, substituicoes], [[], 2]);
+        // Revisão: duas restaurações no mesmo minuto não podem sobrescrever a cópia de segurança da primeira.
+        const res3 = await BA.restaurar(clone(instantaneo));
+        const segurancas = (await BA.listar()).filter(c => c.sufixo.indexOf('antes-de-restaurar') === 0).map(c => c.nome);
+        igual('restaurar: cada restauração guarda a sua própria cópia de segurança, mesmo no mesmo minuto', [new Set([res.copiaDeSeguranca, aposDisco.copiaDeSeguranca, res3.copiaDeSeguranca]).size, [res.copiaDeSeguranca, aposDisco.copiaDeSeguranca, res3.copiaDeSeguranca].every(n => segurancas.includes(n))], [3, true]);
+        igual('restaurar: a primeira cópia de segurança continua com o estado original (não foi sobrescrita)', await BA.lerCopia(res.copiaDeSeguranca), estadoComConta);
+      }
+
+      // ---------- Correções da revisão final ----------
+      {
+        // Valor atual do investimento considera aportes e resgates feitos depois da última atualização
+        const CI = App.calc.investimentos;
+        const invR = (movs, atual) => ({ classe: 'renda_fixa', movimentacoes: movs, atualizacoes: atual });
+        const aporteCedo = { tipo: 'aporte', data: '2026-06-01', valor: 510000 };
+        const r1 = CI.resumoDoInvestimento(invR([aporteCedo, { tipo: 'aporte', data: '2026-11-05', valor: 10000 }], [{ data: '2026-10-31', valorAtual: 523400 }]));
+        igual('investimento: aporte depois da última atualização entra no valor atual (o patrimônio não cai)', [r1.valorAtual, r1.aportado, r1.rentabilidade, r1.valorAtualAjustado], [533400, 520000, 13400, true]);
+        const r2 = CI.resumoDoInvestimento(invR([{ tipo: 'aporte', data: '2026-06-01', valor: 500000 }, { tipo: 'resgate', data: '2026-11-05', valor: 523400 }], [{ data: '2026-10-31', valorAtual: 523400 }]));
+        igual('investimento: resgate total depois da última atualização zera o valor (o patrimônio não dobra)', [r2.valorAtual, r2.rentabilidade], [0, 23400]);
+        const r3 = CI.resumoDoInvestimento(invR([{ tipo: 'aporte', data: '2026-06-01', valor: 100000 }, { tipo: 'aporte', data: '2026-10-31', valor: 5000 }], [{ data: '2026-10-31', valorAtual: 108000 }]));
+        igual('investimento: movimento na mesma data da atualização já está no valor informado', [r3.valorAtual, r3.valorAtualAjustado], [108000, false]);
+        igual('investimento: com data de corte, movimentos posteriores ao corte não contam', CI.resumoDoInvestimento(invR([aporteCedo, { tipo: 'aporte', data: '2026-11-05', valor: 10000 }], [{ data: '2026-10-31', valorAtual: 523400 }]), '2026-11-01').valorAtual, 523400);
+        igual('investimento: resgate maior que o valor nunca deixa o valor negativo', CI.resumoDoInvestimento(invR([{ tipo: 'aporte', data: '2026-06-01', valor: 1000 }, { tipo: 'resgate', data: '2026-11-05', valor: 5000 }], [{ data: '2026-10-31', valorAtual: 1000 }])).valorAtual, 0);
+        igual('investimento: rendimento e taxa depois da atualização não mudam o valor do ativo', CI.resumoDoInvestimento(invR([aporteCedo, { tipo: 'rendimento', data: '2026-11-05', valor: 3000 }, { tipo: 'taxa', data: '2026-11-06', valor: 100 }], [{ data: '2026-10-31', valorAtual: 523400 }])).valorAtual, 523400);
+
+        zerarDados();
+        const HR = '2026-11-10';
+        await App.contas.criar({ ...base, nome: 'Conta R', saldoInicial: 80000 });
+        const contaR = App.contas.listar()[0];
+        await App.categorias.criar({ nome: 'Compras R', natureza: 'despesa', cor: '#1d4ed8' });
+        const catR = App.categorias.listar('despesa')[0];
+
+        // Conta inativa continua no saldo e no patrimônio
+        await App.contas.definirAtiva(contaR.id, false);
+        const PR = App.calc.painel.preparar({ contas: D_registros('contas'), lancamentos: D_registros('lancamentos'), cartoes: [], compras: [], faturas: [], investimentos: [] });
+        igual('conta inativa: o saldo total e o saldo no painel continuam incluindo o dinheiro dela', [App.calc.saldoTotal(D_registros('contas'), App.contas.saldos()), App.calc.painel.saldoEm(PR, HR), App.calc.painel.patrimonio(PR, HR).patrimonio], [80000, 80000, 80000]);
+        await App.contas.definirAtiva(contaR.id, true);
+
+        // Estorno parcial não pode ser removido depois do estorno total
+        await App.cartoes.criar({ nome: 'Cartão R', instituicao: 'B', limite: 900000, diaFechamento: 3, diaVencimento: 10, compraNoDiaFechamento: 'proxima' });
+        const cartaoR = App.cartoes.listar()[0];
+        await App.faturas.gerarFaturas(HR);
+        await App.compras.criar({ cartaoId: cartaoR.id, descricao: 'TV', valorTotal: 100000, parcelas: 1, dataCompra: HR, categoriaId: catR.id, observacao: '' }, HR);
+        const tv = App.compras.listar()[0];
+        await App.compras.estornarParcial(tv.id, { valor: 20000, mesCredito: '' }, HR);
+        igual('estorno total: a prévia vem do motor (parcelas canceladas, valor e crédito)', App.compras.previaDoEstornoTotal(tv, HR), { parcelasCanceladas: 1, valorCancelado: 100000, credito: -20000 });
+        await App.compras.estornarTotal(tv.id, { mesCredito: '' }, HR);
+        const fatTv = App.faturas.obterPorMes(cartaoR.id, App.calc.cartoes.mesDaFatura(cartaoR, HR));
+        const ajusteParcial = fatTv.ajustes.find(a => a.tipo === 'estorno_parcial');
+        await erro('estorno: não remove o crédito de um estorno parcial depois do estorno total', () => App.faturas.removerAjuste(fatTv.id, ajusteParcial.id, HR), 'já está estornada');
+        igual('estorno: o total da fatura continua fechando em zero (parcela cancelada, parcial e reversão se anulam)', App.faturas.info(fatTv, HR).total, 0);
+
+        // Cartão com ajuste ou encargo lançado não é excluído em silêncio
+        await App.cartoes.criar({ nome: 'Cartão S', instituicao: 'B', limite: 100000, diaFechamento: 5, diaVencimento: 12, compraNoDiaFechamento: 'proxima' });
+        const cartaoS = App.cartoes.listar().find(c => c.nome === 'Cartão S');
+        await App.faturas.gerarFaturas(HR);
+        const fatS = App.faturas.obterPorMes(cartaoS.id, App.calc.cartoes.mesDaFatura(cartaoS, HR));
+        await App.faturas.adicionarEncargo(fatS.id, { tipo: 'juros', valor: 1520, descricao: '' }, HR);
+        await erro('cartão: com encargo lançado numa fatura não pode ser excluído', () => App.cartoes.excluir(cartaoS.id), 'ajustes ou encargos');
+        igual('cartão: a recusa não apagou nada', [App.cartoes.obter(cartaoS.id) !== undefined, App.faturas.obter(fatS.id).encargos.length], [true, 1]);
+        await App.faturas.removerEncargo(fatS.id, fatS.encargos[0].id, HR);
+        await App.cartoes.excluir(cartaoS.id);
+        igual('cartão: sem ajustes nem encargos pode ser excluído', App.cartoes.obter(cartaoS.id), undefined);
+      }
+
+      function D_registros(n) { return App.dados.registros(n); }
+
+      const falhas = resultados.filter(r => !r.ok).length;
+      document.getElementById('resumo').innerHTML = falhas
+        ? '<span class="falha">' + falhas + ' de ' + resultados.length + ' testes falharam.</span>'
+        : '<span class="ok">Todos os ' + resultados.length + ' testes passaram.</span>';
+      document.querySelector('#resultados tbody').innerHTML = resultados.map(r =>
+        '<tr><td>' + U.escaparHtml(r.nome) + '</td><td class="' + (r.ok ? 'ok' : 'falha') + '">' +
+        (r.ok ? 'OK' : 'Falhou: <code>' + U.escaparHtml(r.detalhe) + '</code>') + '</td></tr>'
+      ).join('');
+    })();
+  </script>
+</body>
+</html>

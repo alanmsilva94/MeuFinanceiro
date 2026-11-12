@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MeuFinanceiro</title>
+
+  <!-- Aplica o tema salvo antes de desenhar a página, para não piscar. -->
+  <script>
+    try {
+      var tema = localStorage.getItem('mf-tema');
+      if (tema === 'light' || tema === 'dark') document.documentElement.dataset.theme = tema;
+    } catch (e) {}
+  </script>
+
+  <link rel="stylesheet" href="css/fontes.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/componentes.css">
+  <link rel="stylesheet" href="css/graficos.css">
+  <link rel="stylesheet" href="css/acabamento.css">
+  <link rel="stylesheet" href="css/impressao.css" media="print">
+</head>
+<body class="sem-conexao">
+
+  <aside class="menu" aria-label="Menu principal">
+    <div class="menu__marca">
+      <span class="icone icone--preenchido" aria-hidden="true">account_balance_wallet</span>
+      <span>MeuFinanceiro</span>
+    </div>
+    <nav class="menu__navegacao" id="menu-navegacao"></nav>
+    <div class="menu__rodape" id="versao"></div>
+  </aside>
+
+  <div class="principal">
+    <header class="cabecalho">
+      <div class="cabecalho__titulo" id="titulo-tela"></div>
+
+      <button type="button" class="estado-dados" id="estado-dados" data-estado="outro">
+        <span class="estado-dados__ponto" aria-hidden="true"></span>
+        <span data-texto>Dados desconectados</span>
+      </button>
+
+      <div class="seletor-mes" role="group" aria-label="Mês consultado">
+        <button type="button" class="seletor-mes__seta" id="mes-anterior" aria-label="Mês anterior">
+          <span class="icone" aria-hidden="true">chevron_left</span>
+        </button>
+        <button type="button" class="seletor-mes__nome" id="mes-nome" title="Voltar ao mês atual"></button>
+        <button type="button" class="seletor-mes__seta" id="mes-seguinte" aria-label="Mês seguinte">
+          <span class="icone" aria-hidden="true">chevron_right</span>
+        </button>
+      </div>
+
+      <button type="button" class="botao-icone" id="botao-imprimir" aria-label="Imprimir ou salvar como PDF" title="Imprimir ou salvar como PDF">
+        <span class="icone" aria-hidden="true">print</span>
+      </button>
+
+      <button type="button" class="botao-icone" id="botao-tema" aria-label="Alternar tema">
+        <span class="icone" aria-hidden="true">dark_mode</span>
+      </button>
+    </header>
+
+    <div class="cabecalho-impressao" id="cabecalho-impressao" aria-hidden="true"></div>
+    <main class="conteudo" id="conteudo" tabindex="-1"></main>
+  </div>
+
+  <!-- Ordem de carregamento: núcleo, cálculo, dados, interface, telas, inicialização. -->
+  <script src="js/nucleo/app.js"></script>
+  <script src="js/nucleo/util.js"></script>
+  <script src="js/nucleo/xlsx.js"></script>
+  <script src="js/nucleo/arquivos.js"></script>
+  <script src="js/nucleo/armazenamento.js"></script>
+  <script src="js/calculo/motor.js"></script>
+  <script src="js/calculo/recorrencias.js"></script>
+  <script src="js/calculo/cartoes.js"></script>
+  <script src="js/calculo/investimentos.js"></script>
+  <script src="js/calculo/painel.js"></script>
+  <script src="js/dados/comum.js"></script>
+  <script src="js/nucleo/backup.js"></script>
+  <script src="js/dados/contas.js"></script>
+  <script src="js/dados/categorias.js"></script>
+  <script src="js/dados/lancamentos.js"></script>
+  <script src="js/dados/recorrencias.js"></script>
+  <script src="js/dados/cartoes.js"></script>
+  <script src="js/dados/faturas.js"></script>
+  <script src="js/dados/compras.js"></script>
+  <script src="js/dados/investimentos.js"></script>
+  <script src="js/dados/exportacao.js"></script>
+  <script src="js/ui/aviso.js"></script>
+  <script src="js/ui/formulario.js"></script>
+  <script src="js/ui/graficos.js"></script>
+  <script src="js/ui/modal.js"></script>
+  <script src="js/ui/roteador.js"></script>
+  <script src="js/telas/conectar.js"></script>
+  <script src="js/telas/dashboard.js"></script>
+  <script src="js/telas/movimentos.js"></script>
+  <script src="js/telas/entradas.js"></script>
+  <script src="js/telas/saidas.js"></script>
+  <script src="js/telas/recorrencias.js"></script>
+  <script src="js/telas/cartoes.js"></script>
+  <script src="js/telas/investimentos.js"></script>
+  <script src="js/telas/backup.js"></script>
+  <script src="js/telas/contas.js"></script>
+  <script src="js/telas/configuracoes.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

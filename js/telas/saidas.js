@@ -1,0 +1,21 @@
+/* Tela Saídas: despesas com formulário, filtros, totais e tabela (RF-08 a RF-12). */
+App.telas.criarMovimentos({
+  nome: 'saidas',
+  tipo: 'despesa',
+  titulo: 'Saídas',
+  icone: 'trending_down',
+  ordem: 3,
+  plural: 'saídas',
+  tituloNovo: 'Nova saída',
+  tituloEdicao: 'Editar saída',
+  descricaoFormulario: 'Registre o que você paga ou vai pagar. Compras no cartão de crédito ficam na tela Cartões.',
+  rotuloBotaoNovo: 'Registrar saída',
+  rotuloVencimento: 'Vencimento',
+  rotuloEfetivada: 'Pago',
+  rotuloDataEfetiva: 'Data de pagamento',
+  rotuloMarcar: 'Marcar como pago',
+  rotuloTotalRealizado: 'Pago',
+  rotuloTotalPendente: 'A pagar (pendente)',
+  mensagemCriado: 'Saída registrada.',
+  mensagemEfetivado: 'Saída marcada como paga.',
+});

@@ -1,0 +1,277 @@
+/* Variáveis visuais. O tema escuro redefine as mesmas variáveis; nenhuma tela usa cor fixa.
+   Direção visual: superfícies claras e arejadas, azul-índigo como cor de marca, sombras em camadas
+   (de baixo contraste, para dar profundidade sem peso), cantos generosos e movimento curto. */
+
+:root {
+  color-scheme: light;
+
+  --fonte-texto: "Inter", system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  --fonte-titulo: "Plus Jakarta Sans", "Inter", system-ui, "Segoe UI", sans-serif;
+
+  --cor-fundo: #f3f5fb;
+  --cor-superficie: #ffffff;
+  --cor-superficie-2: #f3f6fd;
+  --cor-superficie-3: #e8eefb;
+  --cor-superficie-4: #dbe5f8;
+  --cor-texto: #0d1b2e;
+  --cor-texto-2: #3f4a5f;
+  --cor-texto-3: #667085;
+  --cor-borda: #e2e8f4;
+  --cor-borda-forte: #cdd6e8;
+
+  --cor-primaria: #2556e8;
+  --cor-primaria-forte: #1b3fc0;
+  --cor-primaria-suave: #e3eaff;
+  --cor-sobre-primaria: #ffffff;
+  --gradiente-primario: linear-gradient(135deg, #3b6cf5 0%, #2556e8 48%, #4a3fd6 100%);
+  --gradiente-marca: linear-gradient(135deg, #4d7cff 0%, #3a47e0 100%);
+
+  --cor-receita: #15803d;
+  --cor-receita-suave: #dcf7e6;
+  --cor-despesa: #c4222a;
+  --cor-despesa-suave: #ffe3e0;
+  --cor-pendente: #a14a0b;
+  --cor-pendente-suave: #fdf0cf;
+  --cor-info: #0a6c86;
+  --cor-info-suave: #d8f3fa;
+
+  --sombra-sm: 0 1px 2px rgba(16, 31, 64, 0.06);
+  --sombra: 0 1px 2px rgba(16, 31, 64, 0.05), 0 4px 16px -4px rgba(16, 31, 64, 0.08);
+  --sombra-elevada: 0 2px 4px rgba(16, 31, 64, 0.05), 0 12px 28px -8px rgba(16, 31, 64, 0.16);
+  --sombra-alta: 0 4px 8px rgba(16, 31, 64, 0.08), 0 24px 48px -12px rgba(16, 31, 64, 0.28);
+  --sombra-primaria: 0 1px 2px rgba(27, 63, 192, 0.35), 0 6px 14px -4px rgba(37, 86, 232, 0.45);
+  --anel-foco: 0 0 0 3px rgba(37, 86, 232, 0.22);
+  --brilho-topo: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+
+  --fundo-ambiente:
+    radial-gradient(900px 480px at 8% -10%, rgba(59, 108, 245, 0.10), transparent 60%),
+    radial-gradient(700px 420px at 100% 0%, rgba(124, 92, 246, 0.07), transparent 60%);
+
+  --raio-sm: 8px;
+  --raio: 10px;
+  --raio-lg: 16px;
+  --raio-total: 999px;
+
+  --esp-1: 4px;
+  --esp-2: 8px;
+  --esp-3: 12px;
+  --esp-4: 16px;
+  --esp-5: 24px;
+  --esp-6: 32px;
+  --esp-7: 48px;
+
+  --suave: cubic-bezier(0.22, 1, 0.36, 1);
+  --rapido: 0.16s;
+  --medio: 0.28s;
+
+  --menu-largura: 264px;
+  --cabecalho-altura: 68px;
+  --conteudo-max: 1440px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --cor-fundo: #0a101d;
+    --cor-superficie: #111a2c;
+    --cor-superficie-2: #0e1626;
+    --cor-superficie-3: #1a2540;
+    --cor-superficie-4: #26345a;
+    --cor-texto: #f1f5fb;
+    --cor-texto-2: #c3cddf;
+    --cor-texto-3: #8b98b0;
+    --cor-borda: rgba(148, 170, 214, 0.14);
+    --cor-borda-forte: rgba(148, 170, 214, 0.26);
+    --cor-primaria: #7aa5ff;
+    --cor-primaria-forte: #a9c4ff;
+    --cor-primaria-suave: rgba(122, 165, 255, 0.16);
+    --cor-sobre-primaria: #07142e;
+    --gradiente-primario: linear-gradient(135deg, #8ab1ff 0%, #6b97fb 50%, #8f86ff 100%);
+    --gradiente-marca: linear-gradient(135deg, #8ab1ff 0%, #7a7cf5 100%);
+    --cor-receita: #4ade80;
+    --cor-receita-suave: rgba(74, 222, 128, 0.14);
+    --cor-despesa: #ff8a84;
+    --cor-despesa-suave: rgba(255, 110, 100, 0.15);
+    --cor-pendente: #fbbf24;
+    --cor-pendente-suave: rgba(251, 191, 36, 0.15);
+    --cor-info: #4cc9f0;
+    --cor-info-suave: rgba(76, 201, 240, 0.15);
+    --sombra-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --sombra: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 20px -6px rgba(0, 0, 0, 0.5);
+    --sombra-elevada: 0 2px 4px rgba(0, 0, 0, 0.4), 0 14px 32px -8px rgba(0, 0, 0, 0.6);
+    --sombra-alta: 0 4px 8px rgba(0, 0, 0, 0.5), 0 28px 56px -12px rgba(0, 0, 0, 0.7);
+    --sombra-primaria: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px -4px rgba(122, 165, 255, 0.4);
+    --anel-foco: 0 0 0 3px rgba(122, 165, 255, 0.28);
+    --brilho-topo: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    --fundo-ambiente:
+      radial-gradient(900px 480px at 8% -10%, rgba(80, 120, 255, 0.16), transparent 60%),
+      radial-gradient(700px 420px at 100% 0%, rgba(140, 100, 255, 0.12), transparent 60%);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --cor-fundo: #0a101d;
+  --cor-superficie: #111a2c;
+  --cor-superficie-2: #0e1626;
+  --cor-superficie-3: #1a2540;
+  --cor-superficie-4: #26345a;
+  --cor-texto: #f1f5fb;
+  --cor-texto-2: #c3cddf;
+  --cor-texto-3: #8b98b0;
+  --cor-borda: rgba(148, 170, 214, 0.14);
+  --cor-borda-forte: rgba(148, 170, 214, 0.26);
+  --cor-primaria: #7aa5ff;
+  --cor-primaria-forte: #a9c4ff;
+  --cor-primaria-suave: rgba(122, 165, 255, 0.16);
+  --cor-sobre-primaria: #07142e;
+  --gradiente-primario: linear-gradient(135deg, #8ab1ff 0%, #6b97fb 50%, #8f86ff 100%);
+  --gradiente-marca: linear-gradient(135deg, #8ab1ff 0%, #7a7cf5 100%);
+  --cor-receita: #4ade80;
+  --cor-receita-suave: rgba(74, 222, 128, 0.14);
+  --cor-despesa: #ff8a84;
+  --cor-despesa-suave: rgba(255, 110, 100, 0.15);
+  --cor-pendente: #fbbf24;
+  --cor-pendente-suave: rgba(251, 191, 36, 0.15);
+  --cor-info: #4cc9f0;
+  --cor-info-suave: rgba(76, 201, 240, 0.15);
+  --sombra-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sombra: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 20px -6px rgba(0, 0, 0, 0.5);
+  --sombra-elevada: 0 2px 4px rgba(0, 0, 0, 0.4), 0 14px 32px -8px rgba(0, 0, 0, 0.6);
+  --sombra-alta: 0 4px 8px rgba(0, 0, 0, 0.5), 0 28px 56px -12px rgba(0, 0, 0, 0.7);
+  --sombra-primaria: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px -4px rgba(122, 165, 255, 0.4);
+  --anel-foco: 0 0 0 3px rgba(122, 165, 255, 0.28);
+  --brilho-topo: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  --fundo-ambiente:
+    radial-gradient(900px 480px at 8% -10%, rgba(80, 120, 255, 0.16), transparent 60%),
+    radial-gradient(700px 420px at 100% 0%, rgba(140, 100, 255, 0.12), transparent 60%);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--cor-fundo);
+  background-image: var(--fundo-ambiente);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  color: var(--cor-texto);
+  font-family: var(--fonte-texto);
+  font-size: 14px;
+  line-height: 21px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "cv11", "ss01";
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--fonte-titulo);
+  margin: 0;
+  color: var(--cor-texto);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: 30px;
+  line-height: 38px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+h2 {
+  font-size: 19px;
+  line-height: 28px;
+  font-weight: 700;
+}
+
+h3 {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 650;
+}
+
+p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--cor-primaria);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--cor-primaria);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--cor-primaria-suave);
+  color: var(--cor-texto);
+}
+
+/* Barras de rolagem discretas */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--cor-borda-forte) transparent;
+}
+
+.texto-secundario {
+  color: var(--cor-texto-2);
+}
+
+.texto-fraco {
+  color: var(--cor-texto-3);
+}
+
+.oculto-visualmente {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
